@@ -2252,6 +2252,764 @@ MEMORY.md is an index, not a memory — each entry should be one line,
 under ~150 characters: - [Title](file.md) — one-line hook.\``,
         description: "记忆提取子代理的完整指令：明确工具限制（只读 Bash、只能写记忆目录）、高效策略（并行读后并行写）、详细的保存/不保存规则，以及两步保存流程（文件 + 索引）。",
       },
+      {
+        title: "AskUserQuestion 工具 — 多选提问协议",
+        language: "typescript",
+        code: `// tools/AskUserQuestionTool/prompt.ts
+export const ASK_USER_QUESTION_TOOL_PROMPT = \`Use this tool when you need to ask the user questions during execution. This allows you to:
+1. Gather user preferences or requirements
+2. Clarify ambiguous instructions
+3. Get decisions on implementation choices as you work
+4. Offer choices to the user about what direction to take.
+
+Usage notes:
+- Users will always be able to select "Other" to provide custom text input
+- Use multiSelect: true to allow multiple answers to be selected for a question
+- If you recommend a specific option, make that the first option in the list
+  and add "(Recommended)" at the end of the label
+
+Plan mode note: In plan mode, use this tool to clarify requirements or choose
+between approaches BEFORE finalizing your plan. Do NOT use this tool to ask
+"Is my plan ready?" or "Should I proceed?" - use ExitPlanMode for plan approval.
+IMPORTANT: Do not reference "the plan" in your questions because the user cannot
+see the plan in the UI until you call ExitPlanMode.\`
+
+// Preview feature: Use optional \`preview\` field on options when presenting
+// concrete artifacts that users need to visually compare:
+// - ASCII mockups of UI layouts or components
+// - Code snippets showing different implementations
+// - Diagram variations
+// Note: previews are only supported for single-select questions (not multiSelect)`,
+        description: "AskUserQuestion 工具的提示词定义了它的 4 种使用场景（收集偏好、澄清歧义、决策选择）和关键约束：在计划模式下不能用它问「计划好了吗」——必须用 ExitPlanMode。Preview 特性允许展示 ASCII mockup 供用户对比选择。",
+      },
+      {
+        title: "EnterPlanMode 工具 — 7 类场景触发计划模式",
+        language: "typescript",
+        code: `// tools/EnterPlanModeTool/prompt.ts（外部版本）
+\`Use this tool proactively when you're about to start a non-trivial implementation task.
+
+## When to Use This Tool
+
+**Prefer using EnterPlanMode** for implementation tasks unless they're simple.
+Use it when ANY of these conditions apply:
+
+1. **New Feature Implementation**: Adding meaningful new functionality
+   - Example: "Add a logout button" - where should it go? What should happen on click?
+
+2. **Multiple Valid Approaches**: The task can be solved in several different ways
+   - Example: "Add caching to the API" - could use Redis, in-memory, file-based, etc.
+
+3. **Code Modifications**: Changes that affect existing behavior or structure
+
+4. **Architectural Decisions**: The task requires choosing between patterns or technologies
+   - Example: "Add real-time updates" - WebSockets vs SSE vs polling
+
+5. **Multi-File Changes**: The task will likely touch more than 2-3 files
+
+6. **Unclear Requirements**: You need to explore before understanding the full scope
+   - Example: "Make the app faster" - need to profile and identify bottlenecks
+
+7. **User Preferences Matter**: The implementation could reasonably go multiple ways
+   - If you would use AskUserQuestion to clarify the approach, use EnterPlanMode instead
+
+## When NOT to Use This Tool
+
+Only skip EnterPlanMode for simple tasks:
+- Single-line or few-line fixes (typos, obvious bugs, small tweaks)
+- Adding a single function with clear requirements
+- Pure research/exploration tasks (use the Agent tool with explore agent instead)\``,
+        description: "EnterPlanMode 工具有两套版本：外部版（7 个触发条件，倾向于主动使用）和 Anthropic 内部版（更保守，只有真正有架构歧义才用）。差异体现了 Anthropic 对内外部用户不同的行为期望——外部用户更需要引导，内部用户更自主。",
+      },
+      {
+        title: "ExitPlanMode 工具 — 计划审批协议",
+        language: "typescript",
+        code: `// tools/ExitPlanModeTool/prompt.ts
+export const EXIT_PLAN_MODE_V2_TOOL_PROMPT = \`Use this tool when you are in plan mode and have finished writing your plan
+to the plan file and are ready for user approval.
+
+## How This Tool Works
+- You should have already written your plan to the plan file specified in
+  the plan mode system message
+- This tool does NOT take the plan content as a parameter - it will read
+  the plan from the file you wrote
+- This tool simply signals that you're done planning and ready for the user
+  to review and approve
+- The user will see the contents of your plan file when they review it
+
+## When to Use This Tool
+IMPORTANT: Only use this tool when the task requires planning the implementation
+steps of a task that requires writing code. For research tasks where you're
+gathering information, searching files, reading files or in general trying to
+understand the codebase - do NOT use this tool.
+
+## Before Using This Tool
+Ensure your plan is complete and unambiguous:
+- If you have unresolved questions about requirements or approach,
+  use AskUserQuestion first (in earlier phases)
+- Once your plan is finalized, use THIS tool to request approval
+
+**Important:** Do NOT use AskUserQuestion to ask "Is this plan okay?" or
+"Should I proceed?" - that's exactly what THIS tool does.\``,
+        description: "ExitPlanMode 的核心是一个重要的 UX 分工：它不接受计划内容作为参数，而是读取已写好的计划文件——这意味着 Claude 必须先把计划写到文件里再调用此工具。这个设计让计划内容持久化，用户审批的是文件而不是临时输出。",
+      },
+      {
+        title: "GlobTool 与 GrepTool — 文件搜索指令",
+        language: "typescript",
+        code: `// tools/GlobTool/prompt.ts
+export const DESCRIPTION = \`- Fast file pattern matching tool that works with any codebase size
+- Supports glob patterns like "**/*.js" or "src/**/*.ts"
+- Returns matching file paths sorted by modification time
+- Use this tool when you need to find files by name patterns
+- When you are doing an open ended search that may require multiple rounds
+  of globbing and grepping, use the Agent tool instead\`
+
+// tools/GrepTool/prompt.ts
+export function getDescription(): string {
+  return \`A powerful search tool built on ripgrep
+
+  Usage:
+  - ALWAYS use Grep for search tasks. NEVER invoke \\\`grep\\\` or \\\`rg\\\` as a
+    Bash command. The Grep tool has been optimized for correct permissions.
+  - Supports full regex syntax (e.g., "log.*Error", "function\\\\s+\\\\w+")
+  - Filter files with glob parameter (e.g., "*.js", "**/*.tsx") or type
+    parameter (e.g., "js", "py", "rust")
+  - Output modes: "content" shows matching lines, "files_with_matches" shows
+    only file paths (default), "count" shows match counts
+  - Use Agent tool for open-ended searches requiring multiple rounds
+  - Pattern syntax: Uses ripgrep (not grep) - literal braces need escaping
+    (use \\\`interface\\\\{\\\\}\\\` to find \\\`interface{}\\\` in Go code)
+  - Multiline matching: By default patterns match within single lines only.
+    For cross-line patterns like \\\`struct \\\\{[\\\\s\\\\S]*?field\\\`,
+    use \\\`multiline: true\\\`\`
+}`,
+        description: "GlobTool 和 GrepTool 的提示词都明确了一条关键规则：不允许通过 Bash 工具调用 find/grep/rg。这是一个强制性约束——因为这些工具已经封装了正确的权限控制和格式化，直接调用系统命令会绕过这些保护并产生不一致的输出。",
+      },
+      {
+        title: "WebSearch 工具 — 强制 Sources 引用要求",
+        language: "typescript",
+        code: `// tools/WebSearchTool/prompt.ts
+export function getWebSearchPrompt(): string {
+  const currentMonthYear = getLocalMonthYear() // e.g. "April 2026"
+  return \`
+- Allows Claude to search the web and use the results to inform responses
+- Provides up-to-date information for current events and recent data
+- Returns search result information formatted as search result blocks,
+  including links as markdown hyperlinks
+- Use this tool for accessing information beyond Claude's knowledge cutoff
+- Searches are performed automatically within a single API call
+
+CRITICAL REQUIREMENT - You MUST follow this:
+  - After answering the user's question, you MUST include a "Sources:" section
+    at the end of your response
+  - In the Sources section, list all relevant URLs from the search results as
+    markdown hyperlinks: [Title](URL)
+  - This is MANDATORY - never skip including sources in your response
+
+Usage notes:
+  - Domain filtering is supported to include or block specific websites
+  - Web search is only available in the US
+
+IMPORTANT - Use the correct year in search queries:
+  - The current month is \${currentMonthYear}. You MUST use this year when
+    searching for recent information, documentation, or current events.\`
+}`,
+        description: "WebSearch 提示词有两个强制约束（CRITICAL/MANDATORY）：必须在回答末尾附上 Sources 引用列表，必须在搜索时使用当前年份。后者是通过运行时注入 getLocalMonthYear() 实现的——这是提示词动态化的典型案例，防止 Claude 用训练数据里的旧年份搜索。",
+      },
+      {
+        title: "Agent 工具 — 子代理创建与 Fork 机制",
+        language: "typescript",
+        code: `// tools/AgentTool/prompt.ts（核心片段）
+
+// Fork 模式提示（实验性功能启用时）：
+\`## When to fork
+
+Fork yourself (omit \\\`subagent_type\\\`) when the intermediate tool output isn't
+worth keeping in your context. The criterion is qualitative — "will I need this
+output again" — not task size.
+- **Research**: fork open-ended questions. If research can be broken into
+  independent questions, launch parallel forks in one message. A fork beats a
+  fresh subagent for this — it inherits context and shares your cache.
+- **Implementation**: prefer to fork implementation work that requires more
+  than a couple of edits.
+
+Forks are cheap because they share your prompt cache. Don't set \\\`model\\\` on a
+fork — a different model can't reuse the parent's cache.
+
+**Don't peek.** The tool result includes an \\\`output_file\\\` path — do not Read
+or tail it unless the user explicitly asks for a progress check.
+
+**Don't race.** After launching, you know nothing about what the fork found.
+Never fabricate or predict fork results in any format.\`
+
+// 编写代理 prompt 的指南（通用规则）：
+\`## Writing the prompt
+
+Brief the agent like a smart colleague who just walked into the room — it
+hasn't seen this conversation, doesn't know what you've tried.
+- Explain what you're trying to accomplish and why.
+- Describe what you've already learned or ruled out.
+- Give enough context that the agent can make judgment calls.
+- Never delegate understanding: include file paths, line numbers,
+  what specifically to change.\``,
+        description: "Agent 工具提示词有两个版本：标准版（每次调用都是全新 context）和 Fork 版（继承父代理 context、共享 prompt cache）。Fork 模式有两条重要规则：'Don't peek'（不要主动读取子进程输出文件）和 'Don't race'（在 Fork 完成通知到来前不要猜测结果）——这两条规则防止了常见的多代理协作反模式。",
+      },
+      {
+        title: "Task 系列工具 — 结构化任务跟踪系统",
+        language: "typescript",
+        code: `// tools/TaskCreateTool/prompt.ts — 使用时机
+\`Use this tool proactively in these scenarios:
+- Complex multi-step tasks - When a task requires 3 or more distinct steps
+- Non-trivial and complex tasks - Tasks that require careful planning
+- Plan mode - When using plan mode, create a task list to track the work
+- User explicitly requests todo list
+- After receiving new instructions - Immediately capture user requirements
+- When you start working on a task - Mark it as in_progress BEFORE beginning work
+- After completing a task - Mark it as completed and add follow-up tasks found
+
+Skip using this tool when:
+- There is only a single, straightforward task
+- The task is trivial and tracking it provides no organizational benefit
+- The task can be completed in less than 3 trivial steps
+- The task is purely conversational or informational\`
+
+// tools/TaskGetTool/prompt.ts
+\`## When to Use This Tool
+- When you need the full description and context before starting work on a task
+- To understand task dependencies (what it blocks, what blocks it)
+- After being assigned a task, to get complete requirements
+- After fetching a task, verify its blockedBy list is empty before beginning work.\`
+
+// tools/TaskUpdateTool/prompt.ts — 任务完成标准
+\`- ONLY mark a task as completed when you have FULLY accomplished it
+- If you encounter errors, blockers, or cannot finish, keep the task as in_progress
+- When blocked, create a new task describing what needs to be resolved
+- Never mark a task as completed if:
+  - Tests are failing
+  - Implementation is partial
+  - You encountered unresolved errors
+  - You couldn't find necessary files or dependencies\`
+
+// tools/TaskStopTool/prompt.ts
+\`- Stops a running background task by its ID
+- Takes a task_id parameter identifying the task to stop
+- Returns a success or failure status
+- Use this tool when you need to terminate a long-running task\``,
+        description: "Task 系列工具（Create/Get/List/Update/Stop）构成了一套完整的代理内任务管理协议。关键规则是：开始工作前必须标记 in_progress，完成时必须满足所有标准（无报错、无部分实现）才能标记 completed。这防止了任务状态的虚假完成，确保 Swarm 系统中的其他代理能正确判断依赖关系。",
+      },
+      {
+        title: "SkillTool — 技能调用协议",
+        language: "typescript",
+        code: `// tools/SkillTool/prompt.ts
+export const getPrompt = memoize(async (_cwd: string): Promise<string> => {
+  return \`Execute a skill within the main conversation
+
+When users ask you to perform tasks, check if any of the available skills match.
+Skills provide specialized capabilities and domain knowledge.
+
+When users reference a "slash command" or "/<something>" (e.g., "/commit",
+"/review-pr"), they are referring to a skill. Use this tool to invoke it.
+
+How to invoke:
+- Use this tool with the skill name and optional arguments
+- Examples:
+  - skill: "pdf" - invoke the pdf skill
+  - skill: "commit", args: "-m 'Fix bug'"
+  - skill: "review-pr", args: "123"
+  - skill: "ms-office-suite:pdf" - invoke using fully qualified name
+
+Important:
+- Available skills are listed in system-reminder messages in the conversation
+- When a skill matches the user's request, this is a BLOCKING REQUIREMENT:
+  invoke the relevant Skill tool BEFORE generating any other response
+- NEVER mention a skill without actually calling this tool
+- Do not invoke a skill that is already running
+- Do not use this tool for built-in CLI commands (like /help, /clear, etc.)
+- If you see a <command-name> tag in the current turn, the skill has ALREADY
+  been loaded - follow the instructions directly instead of calling this again\`
+})
+
+// 技能列表预算系统：
+// - 技能描述总预算 = context_window_tokens × 4 chars × 1% = ~8000 chars
+// - 每个描述最大 250 字符（内置技能不受截断影响）
+// - 超预算时：先截断用户自定义技能描述，保留内置技能完整描述`,
+        description: "SkillTool 的 BLOCKING REQUIREMENT 是一个强制拦截机制：一旦识别到用户意图匹配某个技能，Claude 必须先调用 Skill 工具，而不是直接回答。技能描述的预算系统（上下文窗口的 1%）确保即使有大量自定义技能，也不会占用过多 token——内置技能优先，用户技能自动截断。",
+      },
+      {
+        title: "TodoWriteTool — 旧版任务列表（vs 新版 Task 系统）",
+        language: "typescript",
+        code: `// tools/TodoWriteTool/prompt.ts（早期版本，现在 TaskCreate 系列已取代）
+export const PROMPT = \`Use this tool to create and manage a structured task list.
+
+## Task States and Management
+
+1. **Task States**:
+   - pending: Task not yet started
+   - in_progress: Currently working on (limit to ONE task at a time)
+   - completed: Task finished successfully
+
+   IMPORTANT: Task descriptions must have two forms:
+   - content: The imperative form (e.g., "Run tests", "Build the project")
+   - activeForm: The present continuous form shown during execution
+     (e.g., "Running tests", "Building the project")
+
+2. **Task Management**:
+   - Update task status in real-time as you work
+   - Mark tasks complete IMMEDIATELY after finishing (don't batch completions)
+   - Exactly ONE task must be in_progress at any time (not less, not more)
+   - Complete current tasks before starting new ones
+   - Remove tasks that are no longer relevant from the list entirely
+
+3. **Task Completion Requirements**:
+   - ONLY mark a task as completed when you have FULLY accomplished it
+   - If you encounter errors, blockers, or cannot finish, keep as in_progress
+   - Never mark completed if: tests are failing, implementation is partial,
+     you encountered unresolved errors, you couldn't find dependencies\``,
+        description: "TodoWriteTool 是 Claude Code 早期的任务管理工具，通过单个 JSON 数组操作所有 todo 项。新版 TaskCreate/TaskUpdate 系统将任务持久化到文件系统，支持跨代理共享和依赖关系（blockedBy）——这是支撑 Swarm 多代理协作的核心升级。两套工具并存体现了 Claude Code 向团队协作演进的过渡。",
+      },
+      {
+        title: "EnterWorktree / ExitWorktree — Git 工作树隔离",
+        language: "typescript",
+        code: `// tools/EnterWorktreeTool/prompt.ts
+\`Use this tool ONLY when the user explicitly asks to work in a worktree.
+
+## When to Use
+- The user explicitly says "worktree" (e.g., "start a worktree", "work in a worktree")
+
+## When NOT to Use
+- The user asks to create a branch, switch branches, or work on a different branch
+  — use git commands instead
+- Never use this tool unless the user explicitly mentions "worktree"
+
+## Behavior
+- In a git repository: creates a new git worktree inside .claude/worktrees/
+  with a new branch based on HEAD
+- Outside a git repository: delegates to WorktreeCreate/WorktreeRemove hooks
+  for VCS-agnostic isolation
+- Switches the session's working directory to the new worktree\`
+
+// tools/ExitWorktreeTool/prompt.ts
+\`Exit a worktree session created by EnterWorktree.
+
+## Scope
+This tool ONLY operates on worktrees created by EnterWorktree in this session.
+It will NOT touch:
+- Worktrees you created manually with git worktree add
+- Worktrees from a previous session (even if created by EnterWorktree then)
+- The directory you're in if EnterWorktree was never called
+
+## Parameters
+- action (required): "keep" or "remove"
+  - "keep" — leave the worktree directory and branch intact on disk
+  - "remove" — delete the worktree directory and its branch
+- discard_changes (optional, default false): only meaningful with action: "remove".
+  If the worktree has uncommitted files or commits not on the original branch,
+  the tool will REFUSE to remove it unless this is set to true.\``,
+        description: "Worktree 工具对使用条件有极其严格的约束——必须是用户明确说出 'worktree' 关键词才能使用，不能因为用户说'切分支'或'修复功能'而主动创建。这个强约束防止了一种危险场景：Claude 擅自为简单任务创建 worktree，导致用户的工作目录管理混乱。ExitWorktree 的 discard_changes 保护机制确保未提交的工作不会被静默丢弃。",
+      },
+      {
+        title: "SendMessage + TeamCreate/Delete — Swarm 多代理通信协议",
+        language: "typescript",
+        code: `// tools/SendMessageTool/prompt.ts
+\`# SendMessage
+
+Send a message to another agent.
+
+{"to": "researcher", "summary": "assign task 1", "message": "start on task #1"}
+
+| to | |
+|---|---|
+| "researcher" | Teammate by name |
+| "*" | Broadcast to all teammates — expensive (linear in team size),
+|     |   use only when everyone genuinely needs it |
+
+Your plain text output is NOT visible to other agents — to communicate,
+you MUST call this tool. Messages from teammates are delivered automatically;
+you don't check an inbox. Refer to teammates by name, never by UUID.
+
+## Protocol responses (legacy)
+If you receive a JSON message with type: "shutdown_request" or
+type: "plan_approval_request", respond with the matching _response type.
+Don't originate shutdown_request unless asked.
+Don't send structured JSON status messages — use TaskUpdate.\`
+
+// tools/TeamCreateTool/prompt.ts（核心规则摘要）
+\`## Team Workflow
+1. Create a team with TeamCreate
+2. Create tasks using the Task tools
+3. Spawn teammates using the Agent tool with team_name and name parameters
+4. Assign tasks using TaskUpdate with owner parameter
+5. Teammates work on assigned tasks and mark them completed
+6. Teammates go idle between turns — this is completely normal and expected!
+   Idle simply means they are waiting for input.
+7. Shutdown your team — send shutdown_request when task is completed
+
+IMPORTANT: Do not use terminal tools to view team activity;
+always send a message to your teammates.\``,
+        description: "SendMessage 工具的关键约束：plain text 输出对其他代理不可见，必须调用工具才能通信。TeamCreate/Delete 实现了一套完整的代理协调协议：团队 = 任务列表，成员闲置（idle）是正常状态而非错误，广播（'*'）成本高应慎用。shutdown_request 的 JSON 协议是代理生命周期管理的核心机制。",
+      },
+      {
+        title: "ToolSearch — 延迟加载工具的搜索协议",
+        language: "typescript",
+        code: `// tools/ToolSearchTool/prompt.ts
+\`Fetches full schema definitions for deferred tools so they can be called.
+
+Deferred tools appear by name in <system-reminder> messages.
+
+Until fetched, only the name is known — there is no parameter schema,
+so the tool cannot be invoked. This tool takes a query, matches it against
+the deferred tool list, and returns the matched tools' complete JSONSchema
+definitions inside a <functions> block.
+
+Query forms:
+- "select:Read,Edit,Grep" — fetch these exact tools by name
+- "notebook jupyter" — keyword search, up to max_results best matches
+- "+slack send" — require "slack" in the name, rank by remaining terms\`
+
+// isDeferredTool() 的判断逻辑：
+// 1. 有 alwaysLoad: true 的工具不推迟（MCP 工具可选择不推迟）
+// 2. MCP 工具默认推迟（workflow-specific，按需加载）
+// 3. ToolSearch 本身永不推迟（需要它来加载其他工具）
+// 4. Fork 实验模式下 AgentTool 不推迟
+// 5. shouldDefer: true 的工具推迟
+// 设计动机：减少初始 prompt 大小，MCP 工具数量可能很多，
+// 按需加载减少 ~10.2% 的舰队 cache_creation token 消耗`,
+        description: "ToolSearch 是 Claude Code 的延迟加载机制：MCP 工具和部分工具不在初始 system prompt 里展示完整 schema，只公布名称。需要用时调用 ToolSearch 获取完整定义。这个设计减少了约 10.2% 的初始 token 消耗（MCP 工具种类很多），同时避免了工具定义变更导致的频繁 cache bust。",
+      },
+      {
+        title: "MagicDocs — 自动维护文档的提示词",
+        language: "markdown",
+        code: `# services/MagicDocs/prompts.ts — getUpdatePromptTemplate()
+
+IMPORTANT: This message and these instructions are NOT part of the actual user
+conversation. Do NOT include any references to "documentation updates",
+"magic docs", or these update instructions in the document content.
+
+Based on the user conversation above, update the Magic Doc file to incorporate
+any NEW learnings, insights, or information that would be valuable to preserve.
+
+CRITICAL RULES FOR EDITING:
+- Preserve the Magic Doc header exactly as-is: # MAGIC DOC: {{docTitle}}
+- Keep the document CURRENT with the latest state of the codebase -
+  this is NOT a changelog or history
+- Update information IN-PLACE to reflect the current state -
+  do NOT append historical notes or track changes over time
+- Remove or replace outdated information rather than adding "Previously..."
+
+DOCUMENTATION PHILOSOPHY:
+- BE TERSE. High signal only. No filler words or unnecessary elaboration.
+- Documentation is for OVERVIEWS, ARCHITECTURE, and ENTRY POINTS -
+  not detailed code walkthroughs
+- Do NOT duplicate information that's already obvious from reading the source code
+
+What TO document:
+- High-level architecture and system design
+- Non-obvious patterns, conventions, or gotchas
+- Key entry points and where to start reading
+- Important design decisions and their rationale
+
+What NOT to document:
+- Anything obvious from reading the code itself
+- Exhaustive lists of files, functions, or parameters
+- Step-by-step implementation details
+
+REMEMBER: Only update if there is substantial new information.
+The Magic Doc header must remain unchanged.`,
+        description: "MagicDocs 的提示词体现了'活文档'哲学：文档应反映代码当前状态，而不是记录历史变更。'Update IN-PLACE'和'Remove outdated information'是核心规则——这让 MagicDocs 与 git log、changelog 的用途形成明确分工。文档哲学部分（高层架构 vs 逐行细节）直接引导模型写出高价值文档而非冗余注释。",
+      },
+      {
+        title: "SessionMemory — 会话记忆模板与更新提示词",
+        language: "markdown",
+        code: `# services/SessionMemory/prompts.ts — DEFAULT_SESSION_MEMORY_TEMPLATE
+
+# Session Title
+_A short and distinctive 5-10 word descriptive title for the session.
+Super info dense, no filler_
+
+# Current State
+_What is actively being worked on right now? Pending tasks not yet completed.
+Immediate next steps._
+
+# Task specification
+_What did the user ask to build? Any design decisions or other explanatory context_
+
+# Files and Functions
+_What are the important files? In short, what do they contain and why are they relevant?_
+
+# Workflow
+_What bash commands are usually run and in what order?
+How to interpret their output if not obvious?_
+
+# Errors & Corrections
+_Errors encountered and how they were fixed.
+What did the user correct? What approaches failed and should not be tried again?_
+
+# Codebase and System Documentation
+_What are the important system components? How do they work/fit together?_
+
+# Learnings
+_What has worked well? What has not? What to avoid?
+Do not duplicate items from other sections_
+
+# Key results
+_If the user asked a specific output such as an answer to a question, a table,
+or other document, repeat the exact result here_
+
+# Worklog
+_Step by step, what was attempted, done? Very terse summary for each step_
+
+---
+# getDefaultUpdatePrompt() — 关键更新规则
+- NEVER modify, delete, or add section headers (lines starting with '#')
+- NEVER modify or delete the italic _section description_ lines
+  (these are TEMPLATE INSTRUCTIONS that must be preserved exactly)
+- ONLY update the actual content that appears BELOW the italic _section descriptions_
+- ALWAYS update "Current State" — this is critical for continuity after compaction
+- Keep each section under ~2000 tokens — condense by cycling out less important details`,
+        description: "SessionMemory 模板的 10 个分段覆盖了会话连续性的完整信息需求：当前状态（紧急优先级最高）、文件映射、工作流、错误历史、结果记录。更新提示词中'不能修改斜体说明行'的规则是模板完整性的护盾——确保 Claude 在压缩和更新时不会破坏模板结构本身。",
+      },
+      {
+        title: "autoDream — 记忆整合梦境提示词",
+        language: "markdown",
+        code: `# services/autoDream/consolidationPrompt.ts — buildConsolidationPrompt()
+
+# Dream: Memory Consolidation
+
+You are performing a dream — a reflective pass over your memory files.
+Synthesize what you've learned recently into durable, well-organized memories
+so that future sessions can orient quickly.
+
+## Phase 1 — Orient
+- ls the memory directory to see what already exists
+- Read MEMORY.md to understand the current index
+- Skim existing topic files so you improve them rather than creating duplicates
+
+## Phase 2 — Gather recent signal
+Look for new information worth persisting. Sources in rough priority order:
+1. Daily logs (logs/YYYY/MM/YYYY-MM-DD.md) if present
+2. Existing memories that drifted — facts that contradict what you see now
+3. Transcript search — grep narrowly, don't read whole files:
+   grep -rn "<narrow term>" transcriptDir/ --include="*.jsonl" | tail -50
+
+Don't exhaustively read transcripts. Look only for things you already
+suspect matter.
+
+## Phase 3 — Consolidate
+- Merge new signal into existing topic files rather than creating near-duplicates
+- Convert relative dates ("yesterday", "last week") to absolute dates
+- Delete contradicted facts — if today's investigation disproves an old memory,
+  fix it at the source
+
+## Phase 4 — Prune and index
+Update MEMORY.md so it stays under MAX_ENTRYPOINT_LINES AND under ~25KB.
+It's an index, not a dump — each entry should be one line under ~150 characters:
+- [Title](file.md) — one-line hook
+
+- Remove pointers to memories that are now stale, wrong, or superseded
+- Resolve contradictions — if two files disagree, fix the wrong one`,
+        description: "autoDream 是 Claude Code 的'睡眠巩固'机制——模拟人类睡眠时记忆整合的过程。4 个阶段（定向→收集→整合→修剪）形成完整的记忆维护闭环。'Don't exhaustively read transcripts'和'grep narrowly'是效率约束，防止梦境任务消耗过多 token。将相对时间（'yesterday'）转换为绝对日期是防止记忆随时间腐化的关键细节。",
+      },
+      {
+        title: "/simplify — 三代理并行代码审查技能",
+        language: "markdown",
+        code: `# skills/bundled/simplify.ts — SIMPLIFY_PROMPT
+
+# Simplify: Code Review and Cleanup
+
+Review all changed files for reuse, quality, and efficiency. Fix any issues found.
+
+## Phase 1: Identify Changes
+Run git diff (or git diff HEAD if there are staged changes) to see what changed.
+
+## Phase 2: Launch Three Review Agents in Parallel
+
+Use the Agent tool to launch all three agents concurrently in a single message.
+Pass each agent the full diff so it has the complete context.
+
+### Agent 1: Code Reuse Review
+1. Search for existing utilities and helpers that could replace newly written code.
+2. Flag any new function that duplicates existing functionality.
+3. Flag any inline logic that could use an existing utility.
+
+### Agent 2: Code Quality Review
+1. Redundant state: state that duplicates existing state
+2. Parameter sprawl: adding new parameters instead of generalizing existing ones
+3. Copy-paste with slight variation: near-duplicate code blocks
+4. Leaky abstractions: exposing internal details that should be encapsulated
+5. Stringly-typed code: using raw strings where constants or enums already exist
+6. Unnecessary JSX nesting: wrapper elements that add no layout value
+7. Unnecessary comments: comments explaining WHAT the code does;
+   keep only non-obvious WHY (hidden constraints, subtle invariants)
+
+### Agent 3: Efficiency Review
+1. Unnecessary work: redundant computations, repeated file reads, N+1 patterns
+2. Missed concurrency: independent operations run sequentially
+3. Hot-path bloat: new blocking work added to startup or per-request paths
+4. Recurring no-op updates: state updates inside polling loops without
+   change-detection guard
+5. Memory: unbounded data structures, missing cleanup, event listener leaks
+
+## Phase 3: Fix Issues
+Wait for all three agents to complete. Aggregate their findings and fix each issue.
+If a finding is a false positive or not worth addressing, note it and move on.`,
+        description: "/simplify 技能的核心设计是三代理并行审查：复用审查（避免重复造轮子）、质量审查（发现反模式）、效率审查（性能问题）。三个独立代理比一个代理依次检查更可靠——每个代理专注于一个维度，不会被其他维度干扰。这是将软件工程最佳实践固化为自动化流程的典型案例。",
+      },
+      {
+        title: "/batch — 大规模并行变更编排技能",
+        language: "markdown",
+        code: `# skills/bundled/batch.ts — buildPrompt() + WORKER_INSTRUCTIONS
+
+# Batch: Parallel Work Orchestration
+
+## Phase 1: Research and Plan (Plan Mode)
+Call EnterPlanMode now, then:
+1. Launch subagents to research what this instruction touches.
+   Find all files, patterns, and call sites that need to change.
+2. Decompose into 5-30 independent units. Each must:
+   - Be independently implementable in an isolated git worktree
+   - Be mergeable on its own without depending on another unit's PR first
+   - Be roughly uniform in size
+3. Determine the e2e test recipe. If you cannot find a concrete path,
+   use AskUserQuestion to ask the user.
+4. Call ExitPlanMode to present the plan for approval.
+
+## Phase 2: Spawn Workers (After Plan Approval)
+ALL agents must use isolation: "worktree" and run_in_background: true.
+Launch them all in a single message block.
+
+Worker Instructions (copied verbatim into each agent prompt):
+  1. Simplify — invoke skill: "simplify" to review and clean up changes
+  2. Run unit tests — npm test / bun test / pytest / go test
+  3. Test end-to-end — follow the e2e recipe from the coordinator's prompt
+  4. Commit and push — create a PR with gh pr create
+  5. Report — end with: PR: <url>
+
+## Phase 3: Track Progress
+| # | Unit | Status | PR |
+|---|------|--------|----|
+| 1 | title | running | — |
+
+Parse PR: <url> from each completion notification and update the table.`,
+        description: "/batch 是 Claude Code 最复杂的内置技能：研究→计划→并行执行→汇总。每个 worker 运行在隔离的 git worktree 里，创建独立 PR——失败的 worker 不影响其他 worker。WORKER_INSTRUCTIONS 被逐字复制到每个代理的 prompt 里，确保所有 worker 遵循相同的完成标准（simplify + 测试 + PR）。",
+      },
+      {
+        title: "/remember — 记忆层审查与晋升技能",
+        language: "markdown",
+        code: `# skills/bundled/remember.ts — SKILL_PROMPT（ANT-ONLY）
+
+# Memory Review
+
+## Goal
+Review the user's memory landscape and produce a clear report of proposed changes.
+Do NOT apply changes — present proposals for user approval.
+
+## Steps
+
+### 1. Gather all memory layers
+Read CLAUDE.md and CLAUDE.local.md from project root.
+Auto-memory content is already in your system prompt.
+
+### 2. Classify each auto-memory entry
+
+| Destination | What belongs there |
+|---|---|
+| CLAUDE.md | Project conventions for ALL contributors: "use bun not npm" |
+| CLAUDE.local.md | Personal instructions not for other contributors |
+| Team memory | Org-wide knowledge across repositories |
+| Stay in auto-memory | Working notes, temporary context |
+
+Note: CLAUDE.md contains instructions for Claude, NOT user preferences for
+external tools (editor theme, IDE keybindings don't belong here).
+
+### 3. Identify cleanup opportunities
+- Duplicates: auto-memory entries already in CLAUDE.md → propose removing
+- Outdated: CLAUDE.md entries contradicted by newer auto-memory → propose updating
+- Conflicts: contradictions between layers → propose resolution
+
+### 4. Present the report grouped by action type:
+1. Promotions — entries to move, with destination and rationale
+2. Cleanup — duplicates, outdated, conflicts
+3. Ambiguous — entries where you need user input
+4. No action needed — brief note on entries that should stay put
+
+## Rules
+- Present ALL proposals before making any changes
+- Do NOT modify files without explicit user approval`,
+        description: "/remember 技能的核心价值是记忆层级的清晰分工：CLAUDE.md（所有贡献者共享）、CLAUDE.local.md（个人专属）、团队记忆（跨仓库）、auto-memory（临时工作笔记）。'先提案再执行'的规则确保用户对记忆系统保持完全控制——没有任何修改会在用户审批前发生。",
+      },
+      {
+        title: "/skillify — 会话过程转化为可复用技能",
+        language: "markdown",
+        code: `# skills/bundled/skillify.ts — SKILLIFY_PROMPT（ANT-ONLY）
+
+# Skillify
+
+You are capturing this session's repeatable process as a reusable skill.
+
+## Step 1: Analyze the Session
+- What repeatable process was performed
+- What the inputs/parameters were
+- The distinct steps (in order)
+- Where the user corrected or steered you (IMPORTANT — captures implicit knowledge)
+- What tools and permissions were needed
+
+## Step 2: Interview the User (via AskUserQuestion — ALL questions via tool!)
+Round 1: Suggest name and description. Ask to confirm.
+Round 2: Present high-level steps. Ask if inline or forked.
+  forked: self-contained, no mid-process user input
+  inline: user wants to steer mid-process
+Round 3: For each major step — success criteria, human checkpoints, parallelism.
+Round 4: Confirm trigger phrases and when to invoke.
+
+## Step 3: Write the SKILL.md
+---
+name: skill-name
+description: one-line description
+allowed-tools: [list of tool permission patterns]
+when_to_use: "Use when... Examples: '...'"  # CRITICAL field
+argument-hint: "hint showing argument placeholders"
+context: fork  # only for self-contained skills
+---
+# Skill Title
+## Goal
+## Steps
+### 1. Step Name
+What to do. Include commands when appropriate.
+**Success criteria**: ALWAYS include this — shows when step is done and we move on.
+
+## Step 4: Confirm and Save
+Output as yaml code block for user review, then ask confirmation via AskUserQuestion.`,
+        description: "/skillify 是 Claude Code 的元技能：把会话过程自动转化为可复用技能。4 轮访谈从'是什么'到'怎么做'逐步深入，特别关注用户在会话中纠正 Claude 的地方——这些纠正往往是最重要的隐式知识。when_to_use 字段是 CRITICAL，它决定了模型何时自动触发该技能。",
+      },
+      {
+        title: "/loop — 定时循环调度技能",
+        language: "typescript",
+        code: `// skills/bundled/loop.ts — 解析规则与 cron 转换
+
+// 输入解析（优先级顺序）：
+// 1. 前置 token 匹配 ^\\d+[smhd]$ → 该 token 是间隔，其余是 prompt
+//    例："5m /babysit-prs" → 间隔 5m，prompt "/babysit-prs"
+// 2. 末尾 "every <N><unit>" → 提取为间隔，从 prompt 中移除
+//    例："check the deploy every 20m" → 间隔 20m，prompt "check the deploy"
+// 3. 默认 10m，整个输入是 prompt
+//    例："check the deploy" → 间隔 10m，prompt "check the deploy"
+// 注意："check every PR" → 不匹配（every 后面不是时间），保持为 prompt
+
+// 间隔 → cron 表达式：
+// Nm (N≤59)  → */N * * * *   （每 N 分钟）
+// Nm (N≥60)  → 0 */H * * *   （四舍五入到小时，H=N/60）
+// Nh (N≤23)  → 0 */N * * *   （每 N 小时）
+// Nd         → 0 0 */N * *   （每 N 天午夜）
+// Ns         → ceil(N/60)m   （cron 最小粒度是 1 分钟）
+
+// 不能整除时（如 7m、90m）→ 取最近整除值，并告知用户四舍五入了
+
+// 执行流程：
+// 1. 调用 ScheduleCronTool 注册定时任务（recurring: true）
+// 2. 告知用户：调度内容、cron 表达式、自然语言频率、
+//    DEFAULT_MAX_AGE_DAYS 天后自动过期、可用 ScheduleCronTool 取消（附 job ID）
+// 3. 立即执行一次 prompt（不等待第一次 cron 触发）`,
+        description: "/loop 技能将自然语言调度（'每 5 分钟检查部署'）转换为 cron 表达式并注册到调度系统。设计亮点：立即执行一次（不等待第一个 cron 触发，提供即时反馈），间隔不能整除时四舍五入并透明告知，任务自动过期防止遗忘的循环任务持续消耗资源。",
+      },
     ],
     flowSteps: [
       { id: "request", label: "用户请求", description: "触发需要提示词的操作" },
