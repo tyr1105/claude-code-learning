@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import { getChapterBySlug, chapters } from "@/data/chapters";
 import FileTree from "@/components/FileTree";
 import FlowDiagram from "@/components/FlowDiagram";
+import InsightCard from "@/components/InsightCard";
 import Link from "next/link";
 import {
   Layout,
@@ -121,6 +122,18 @@ export default function ChapterPage() {
           ))}
         </div>
       </div>
+
+      {/* Design Insights */}
+      {chapter.insights && chapter.insights.length > 0 && (
+        <div className="mb-8">
+          <h2 className="text-lg font-semibold mb-3">设计亮点</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {chapter.insights.map((insight, i) => (
+              <InsightCard key={i} insight={insight} color={chapter.color} />
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Architecture Graph */}
       {chapter.archNodes.length > 0 && (
