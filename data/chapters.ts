@@ -1886,7 +1886,7 @@ try {
       "【系统提示】constants/prompts.ts — 14+ 分段动态构建的主提示",
       "【工具提示】tools/*/prompt.ts — 36 个工具各自的描述与约束（BashTool/FileEditTool/FileReadTool/FileWriteTool/GlobTool/GrepTool/AgentTool/AskUserQuestionTool/EnterPlanModeTool/ExitPlanModeTool/EnterWorktreeTool/ExitWorktreeTool/SkillTool/TaskCreate~Stop/TeamCreate~Delete/SendMessageTool/TodoWriteTool/ToolSearchTool/WebSearchTool/WebFetchTool/BriefTool/ConfigTool/LSPTool/NotebookEditTool/PowerShellTool/ListMcpResources/ReadMcpResource/RemoteTriggerTool/ScheduleCronTool/SleepTool）",
       "【服务提示】compact/prompt.ts 压缩、extractMemories/prompts.ts 记忆提取、MagicDocs 文档维护、SessionMemory 会话记忆、autoDream 记忆整合",
-      "【技能提示】skills/bundled/ — /simplify /batch /remember /skillify /loop /stuck /debug /claude-api /claude-in-chrome /update-config /schedule",
+      "【技能提示】skills/bundled/ — /simplify /batch /remember /skillify /loop /stuck /debug /claude-api /claude-in-chrome /update-config /schedule /keybindings-help /lorem-ipsum",
       "【特殊功能】buddy/prompt.ts 伴侣角色、utils/claudeInChrome 浏览器自动化、utils/swarm/teammatePromptAddendum 多代理通信",
     ],
     archNodes: [
@@ -1917,6 +1917,96 @@ try {
       { path: "skills/bundled/", lines: 800, description: "17 个内置技能的提示词模板" },
     ],
     codeSnippets: [
+      {
+        title: "【总目录 & 索引】37 个提示词分类导航",
+        language: "markdown",
+        code: `# Claude Code 提示词完整索引（37 个收录条目）
+
+## 第一类：主系统提示（1个）
+► 主系统提示 — constants/prompts.ts
+  14+ 分段动态拼接，固定部分走 prompt cache，动态部分末尾追加
+
+## 第二类：文件操作工具提示（3个）
+► FileReadTool — 绝对路径、2000行限制、PDF 分页、禁止读目录
+► FileEditTool — 写前必读、old_string 唯一性、优先 Edit 而非 Write
+► FileWriteTool — 仅用于新建和完整重写，禁止创建未请求的 README
+
+## 第三类：搜索工具提示（2个）
+► GlobTool — 按名称模式搜索，禁止通过 Bash 调 find
+► GrepTool — ripgrep 封装，禁止通过 Bash 调 grep/rg，支持多行模式
+
+## 第四类：代码执行工具提示（5个）
+► BashTool — git 安全协议 + 危险操作约束 + 并行命令建议
+► PowerShellTool — 版本感知（5.1 vs 7+），here-string 格式严格要求
+► SleepTool — 优先于 Bash sleep，注意 cache 5 分钟过期
+► LSPTool — 9 种语义代码智能操作（goToDefinition/findReferences/...）
+► NotebookEditTool — Jupyter cell 操作，0-索引，insert/delete/replace
+
+## 第五类：代理与计划工具提示（5个）
+► AgentTool — 标准模式 vs Fork 模式，Don't peek / Don't race
+► AskUserQuestionTool — 4 种使用场景，Preview 特性，计划模式约束
+► EnterPlanModeTool — 外部版7条件 vs 内部版更保守（USER_TYPE=ant）
+► ExitPlanModeTool — 读文件而非接收参数，计划持久化到磁盘
+► EnterWorktreeTool / ExitWorktreeTool — 必须明确说 worktree 才能用
+
+## 第六类：任务管理工具提示（7个）
+► TaskCreate — 3步以上才用，开始前标记 in_progress
+► TaskGet — 开始前验证 blockedBy 为空
+► TaskList — 按 ID 顺序工作，Teammate workflow
+► TaskUpdate — 完成条件严格（无报错/无部分实现/无未解决依赖）
+► TaskStop — 停止后台任务
+► TodoWriteTool — 旧版单数组方案（已被 Task 系列取代）
+► SkillTool — BLOCKING REQUIREMENT，预算系统 1% context window
+
+## 第七类：网络工具提示（3个）
+► WebSearchTool — 强制 Sources 引用，使用当前年份
+► WebFetchTool — 预审核域名 vs 普通，125字符引用上限，禁复制歌词
+► BriefTool / SendUserMessage — KAIROS 模式，ack→work→result 三段式
+
+## 第八类：Swarm 多代理工具提示（5个）
+► SendMessageTool — plain text 不可见，广播* 成本线性增长
+► TeamCreateTool — 团队=任务列表，idle 正常，shutdown_request 协议
+► TeamDeleteTool — 所有成员退出后才能删除
+► RemoteTriggerTool — in-process OAuth，token 永不暴露给 shell
+► ScheduleCronTool — 避开整点半点，durable 仅明确要求时启用，30天过期
+
+## 第九类：MCP 集成工具提示（3个）
+► ToolSearchTool — 延迟加载，减少 10.2% 初始 cache_creation token
+► ListMcpResourcesTool — 列出 MCP 服务器的 Resource（非 Tool）
+► ReadMcpResourceTool — 按 server+uri 读取具体资源
+（MCPTool 本身 prompt.ts 为空，内容由 mcpClient.ts 运行时动态生成）
+
+## 第十类：配置工具提示（1个）
+► ConfigTool — 从 SUPPORTED_SETTINGS 注册表动态生成，GrowthBook 控制可见性
+
+## 第十一类：服务层提示（5个）
+► compact/prompt.ts — BASE/PARTIAL/NO_TOOLS 三套，9段摘要结构
+► extractMemories/prompts.ts — 4种记忆类型，两步保存，明确的不保存清单
+► MagicDocs/prompts.ts — 活文档哲学：IN-PLACE 更新，不记录历史
+► SessionMemory/prompts.ts — 10分段模板 + 更新规则，结构不可破坏
+► autoDream/consolidationPrompt.ts — 4阶段记忆整合，grep 而非全读
+
+## 第十二类：特殊功能提示（3个）
+► buddy/prompt.ts — 宠物角色共存，让路规则，ONE line or less
+► utils/claudeInChrome/prompt.ts — 弹窗阻塞保护，2-3次失败即停
+► utils/swarm/teammatePromptAddendum.ts — 追加到 Teammate 系统提示末尾
+
+## 第十三类：技能提示（13个）
+► /simplify — 三代理并行（复用/质量/效率），Phase1→2→3 结构
+► /batch — 5-30 worker + isolation:worktree + WORKER_INSTRUCTIONS
+► /remember — 记忆层分级（CLAUDE.md/local/team/auto），先提案后执行
+► /skillify — 会话→技能，4轮访谈，关注用户纠正，when_to_use 是 CRITICAL
+► /loop — 自然语言→cron，立即执行一次，负载分散（避开 :00/:30）
+► /stuck — ANT 专属，进程诊断，发 Slack 前需确认真的有问题
+► /debug — 懒加载日志，64KB 截尾，两种模式（ANT 内部 vs 外部用户）
+► /claude-api — 247KB 文档懒加载，语言自动检测，8种语言文档按需注入
+► /claude-in-chrome — 先调技能才能用 mcp__claude-in-chrome__* 工具
+► /update-config — Memory vs Hooks 核心区别，6步 Hook 验证流程
+► /schedule — 远程 CCR agent（非本地），prompt 完全自包含，时区转换确认
+► /keybindings-help — 从注册表动态生成，userInvocable:false，冲突警告
+► /lorem-ipsum — ANT 专属，ONE_TOKEN_WORDS 精确控 token 数，500k 上限`,
+        description: "本索引覆盖 chapter 13 收录的全部 37 个提示词条目，按 13 个类别分组。每个条目标注了文件路径和最关键的设计要点，方便快速定位。提示词总数：1个系统提示 + 36个工具提示（含3个空/动态）+ 5个服务提示 + 3个特殊功能提示 + 13个技能提示 = 约 96 个独立提示词定义。",
+      },
       {
         title: "主系统提示 — constants/prompts.ts（原文）",
         language: "typescript",
@@ -3552,6 +3642,81 @@ Output as yaml code block for user review, then ask confirmation via AskUserQues
 // 3. 立即执行一次 prompt（不等待第一次 cron 触发）`,
         description: "/loop 技能将自然语言调度（'每 5 分钟检查部署'）转换为 cron 表达式并注册到调度系统。设计亮点：立即执行一次（不等待第一个 cron 触发，提供即时反馈），间隔不能整除时四舍五入并透明告知，任务自动过期防止遗忘的循环任务持续消耗资源。",
       },
+      {
+        title: "/keybindings-help — 快捷键自定义技能",
+        language: "typescript",
+        code: `// skills/bundled/keybindings.ts — registerKeybindingsSkill()
+// 提示词完全从源码注册表动态生成，包含以下几段：
+
+// SECTION_INTRO（核心约束）：
+\`# Keybindings Skill
+Create or modify ~/.claude/keybindings.json to customize keyboard shortcuts.
+
+## CRITICAL: Read Before Write
+Always read ~/.claude/keybindings.json first (it may not exist yet).
+Merge changes with existing bindings — never replace the entire file.
+- Use Edit tool for modifications to existing files
+- Use Write tool only if the file does not exist yet\`
+
+// SECTION_KEYSTROKE_SYNTAX（键名语法）：
+\`Modifiers: ctrl (alias: control), alt (aliases: opt, option),
+shift, meta (aliases: cmd, command)
+Special keys: escape/esc, enter/return, tab, space, backspace, delete, up/down/left/right
+Chords: Space-separated keystrokes, e.g. ctrl+k ctrl+s (1-second timeout)\`
+
+// SECTION_BEHAVIORAL_RULES（行为规则）：
+\`1. Only include contexts the user wants to change (minimal overrides)
+2. Validate that actions and contexts are from the known lists below
+3. Warn user proactively if they choose a key that conflicts with
+   reserved shortcuts or common tools like tmux (ctrl+b) and screen (ctrl+a)
+4. New binding for existing action is additive — default still works
+   unless explicitly unbound (set to null)
+5. To fully replace a default binding: unbind old key AND add new one\`
+
+// 动态生成部分（运行时从注册表构建）：
+// - generateContextsTable(): 所有 UI 上下文及说明
+// - generateActionsTable(): 所有可绑定动作 + 默认键 + 上下文
+// - generateReservedShortcuts(): 不可绑定/终端保留/macOS保留的按键列表
+// - /doctor 验证输出格式示例和常见错误修复
+
+// 技能配置：
+// userInvocable: false（不在技能列表显示，通过 update-config 内部调用）
+// isEnabled: isKeybindingCustomizationEnabled（由 GrowthBook 开关控制）`,
+        description: "/keybindings-help 技能的全部参考文档（所有 action、context、保留按键）都从源码注册表动态生成，永远与代码同步。'Read Before Write'约束和'Warn about conflicts'规则是防止用户无意中绑定到 tmux/screen 的保留键（ctrl+b/ctrl+a）上。userInvocable: false 意味着这个技能不在 /skill 列表中显示，而是通过 /update-config 或 claude 内部自动调用。",
+      },
+      {
+        title: "/lorem-ipsum — 长上下文压测占位文本（ANT 专属）",
+        language: "typescript",
+        code: `// skills/bundled/loremIpsum.ts — registerLoremIpsumSkill()（ANT-ONLY）
+
+// 核心设计：ONE_TOKEN_WORDS 词表（~200 个单词）
+// 每个词经过 API token 计数验证，确保每个词恰好是 1 个 token
+// 这样生成 N 个词 = 恰好 N 个 token（±误差极小）
+
+function generateLoremIpsum(targetTokens: number): string {
+  // 每句 10-20 个词（随机），每句结束加 ". "
+  // 每句有 20% 概率后跟段落换行
+  // 循环直到 tokens 达到目标数量
+}
+
+// 技能注册：
+registerBundledSkill({
+  name: 'lorem-ipsum',
+  description: 'Generate filler text for long context testing.
+    Specify token count as argument (e.g., /lorem-ipsum 50000).
+    Outputs approximately the requested number of tokens. Ant-only.',
+  argumentHint: '[token_count]',
+  userInvocable: true,
+  // 上限 500,000 tokens（安全保护）
+  // 超出时明确告知用户已截断
+})
+
+// 使用场景：
+// - 测试模型在 50k/100k/200k token 上下文中的性能
+// - 填充 prompt cache 测试缓存命中行为
+// - 验证长对话的压缩触发时机`,
+        description: "/lorem-ipsum 是 Anthropic 内部的长上下文压测工具。核心工程细节是 ONE_TOKEN_WORDS 词表：每个词都经过 API 实际 token 计数验证确保恰好 1 个 token，使得生成的文本 token 数可精确控制。500k token 上限是安全保护，防止意外生成超大消息。这个技能揭示了 Anthropic 如何在内部做上下文窗口的极限测试。",
+      },
     ],
     flowSteps: [
       { id: "request", label: "用户请求", description: "触发需要提示词的操作" },
@@ -3580,7 +3745,7 @@ Output as yaml code block for user review, then ask confirmation via AskUserQues
       "【提示词全目录 — 第九类：MCP 集成工具】ToolSearchTool（延迟加载，减少 10.2% 初始 cache_creation token）、ListMcpResourcesTool/ReadMcpResourceTool（Resource vs Tool 的 MCP 协议区分）、MCPTool（prompt.ts 空文件，实际内容由 mcpClient.ts 动态生成）。",
       "【提示词全目录 — 第十类：服务层提示】compact/prompt.ts（BASE/PARTIAL/NO_TOOLS 三套，9段摘要结构）、extractMemories/prompts.ts（4种记忆类型，两步保存流程，明确的不保存清单）、MagicDocs（活文档哲学：IN-PLACE 更新，不记录历史）、SessionMemory（10分段模板，结构不可破坏）、autoDream（4阶段记忆整合，grep 而不是全读）。",
       "【提示词全目录 — 第十一类：特殊功能提示】buddy/prompt.ts（宠物角色共存，让路规则）、utils/claudeInChrome/prompt.ts（弹窗阻塞保护，2-3次失败即停）、utils/swarm/teammatePromptAddendum.ts（追加到 Teammate 系统提示，plain text 在团队不可见）。",
-      "【提示词全目录 — 第十二类：技能提示】/simplify（三代理并行：复用/质量/效率）、/batch（5-30 worker 隔离 worktree + WORKER_INSTRUCTIONS）、/remember（记忆层分级审查，先提案后执行）、/skillify（会话转技能，4轮访谈，关注用户纠正）、/loop（自然语言→cron，立即执行一次，负载分散）、/stuck（ANT专属，进程诊断）、/debug（懒加载日志，64KB 截尾）、/claude-api（247KB 文档懒加载，语言自动检测）、/claude-in-chrome（先调技能才能用 MCP 工具）、/update-config（Memory vs Hooks 区别，6步 Hook 验证）、/schedule（远程 CCR agent，prompt 完全自包含）。",
+      "【提示词全目录 — 第十二类：技能提示】/simplify（三代理并行：复用/质量/效率）、/batch（5-30 worker 隔离 worktree + WORKER_INSTRUCTIONS）、/remember（记忆层分级审查，先提案后执行）、/skillify（会话转技能，4轮访谈，关注用户纠正）、/loop（自然语言→cron，立即执行一次，负载分散）、/stuck（ANT专属，进程诊断）、/debug（懒加载日志，64KB 截尾）、/claude-api（247KB 文档懒加载，语言自动检测）、/claude-in-chrome（先调技能才能用 MCP 工具）、/update-config（Memory vs Hooks 区别，6步 Hook 验证）、/schedule（远程 CCR agent，prompt 完全自包含）、/keybindings-help（从注册表动态生成文档，userInvocable: false）、/lorem-ipsum（ANT专属，ONE_TOKEN_WORDS 精确控 token 数，500k 上限保护）。",
       "提示词工程的核心技巧之一是 XML 标签结构化输出：比 JSON 更鲁棒（单个字符错误不会导致整体解析失败），被广泛用于压缩提示（<analysis>/<summary>）、分类器（<block>/<reason>）、记忆提取（<memory type='...'>）等场景。",
       "YOLO 分类器的 Stage 1 提示故意设计得非常简短，限制模型输出最多 64 个 token——模拟人类的'快思考'系统，减少过度分析带来的延迟。Stage 2 才进行深度推理。两阶段设计平衡了速度和准确性。",
       "提示词版本管理是一个隐藏的挑战：prompt cache（1小时TTL）要求提示词字节完全一致才能命中缓存。任何空格修改都会导致 cache miss。工具提示词变更尤其昂贵——如果 SkillTool 的技能列表（动态生成）频繁变化，会持续 bust cache，这就是为什么技能列表被移到 agent_listing_delta attachment 里单独处理。",
