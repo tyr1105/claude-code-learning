@@ -6,7 +6,7 @@ import { chapters } from "@/data/chapters";
 import {
   Layout, Wrench, Terminal, Shield, MessageSquare, Anchor,
   Plug, Users, Database, Monitor, Sparkles, Star, FileText,
-  ChevronLeft, ChevronRight, Home, Check, Menu, X,
+  ChevronLeft, ChevronRight, Home, Check, Menu, X, ChevronDown,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 
@@ -15,11 +15,28 @@ const iconMap: Record<string, React.ElementType> = {
   Plug, Users, Database, Monitor, Sparkles, Star, FileText,
 };
 
+const PROMPT_CATEGORIES = [
+  { id: "sec-prompt-index", label: "提示词索引", color: "#D97757" },
+  { id: "sec-code", label: "▸ 系统提示", color: "#D97757" },
+  { id: "sec-code", label: "▸ 文件操作工具 (3)", color: "#C2785C" },
+  { id: "sec-code", label: "▸ 搜索工具 (2)", color: "#B8860B" },
+  { id: "sec-code", label: "▸ 执行工具 (5)", color: "#8B7355" },
+  { id: "sec-code", label: "▸ 代理与计划 (5)", color: "#A0522D" },
+  { id: "sec-code", label: "▸ 任务管理 (7)", color: "#EDA100" },
+  { id: "sec-code", label: "▸ 网络工具 (3)", color: "#D97757" },
+  { id: "sec-code", label: "▸ Swarm 多代理 (4)", color: "#C2785C" },
+  { id: "sec-code", label: "▸ MCP 工具 (3)", color: "#B8860B" },
+  { id: "sec-code", label: "▸ 服务层提示 (5)", color: "#8B7355" },
+  { id: "sec-code", label: "▸ 特殊功能 (3)", color: "#A0522D" },
+  { id: "sec-code", label: "▸ 技能提示 (13)", color: "#EDA100" },
+];
+
 export default function Sidebar() {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [visited, setVisited] = useState<Set<string>>(new Set());
+  const [promptExpanded, setPromptExpanded] = useState(false);
 
   // Track visited chapters
   useEffect(() => {
@@ -38,6 +55,7 @@ export default function Sidebar() {
       });
     }
     setMobileOpen(false);
+    if (pathname === "/chapters/prompts") setPromptExpanded(true);
   }, [pathname]);
 
   const sidebarContent = (
@@ -78,37 +96,76 @@ export default function Sidebar() {
             const Icon = iconMap[ch.icon] || Layout;
             const isActive = pathname === `/chapters/${ch.slug}`;
             const isVisited = visited.has(ch.slug);
+            const isPrompts = ch.slug === "prompts";
             return (
-              <Link
-                key={ch.slug}
-                href={`/chapters/${ch.slug}`}
-                className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all duration-200 ${
-                  isActive ? "font-semibold" : "opacity-70 hover:opacity-100"
-                }`}
-                style={{
-                  ...(isActive
-                    ? {
-                        background: ch.color + "15",
-                        color: ch.color,
-                        borderLeft: `3px solid ${ch.color}`,
-                        paddingLeft: 9,
-                      }
-                    : {}),
-                }}
-                title={collapsed ? ch.title : undefined}
-              >
-                <Icon size={18} style={{ color: ch.color, flexShrink: 0 }} />
-                {!collapsed && (
-                  <>
-                    <span className="truncate flex-1">
-                      {i + 1}. {ch.title}
-                    </span>
-                    {isVisited && !isActive && (
-                      <Check size={12} style={{ color: "var(--muted)", flexShrink: 0 }} />
+              <div key={ch.slug}>
+                <div className="flex items-center">
+                  <Link
+                    href={`/chapters/${ch.slug}`}
+                    className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all duration-200 flex-1 min-w-0 ${
+                      isActive ? "font-semibold" : "opacity-70 hover:opacity-100"
+                    }`}
+                    style={{
+                      ...(isActive
+                        ? {
+                            background: ch.color + "15",
+                            color: ch.color,
+                            borderLeft: `3px solid ${ch.color}`,
+                            paddingLeft: 9,
+                          }
+                        : {}),
+                    }}
+                    title={collapsed ? ch.title : undefined}
+                  >
+                    <Icon size={18} style={{ color: ch.color, flexShrink: 0 }} />
+                    {!collapsed && (
+                      <>
+                        <span className="truncate flex-1">
+                          {i + 1}. {ch.title}
+                        </span>
+                        {isVisited && !isActive && (
+                          <Check size={12} style={{ color: "var(--muted)", flexShrink: 0 }} />
+                        )}
+                      </>
                     )}
-                  </>
+                  </Link>
+                  {/* Expand toggle for prompts chapter */}
+                  {isPrompts && !collapsed && (
+                    <button
+                      onClick={() => setPromptExpanded((v) => !v)}
+                      className="p-1.5 rounded opacity-50 hover:opacity-100 transition-opacity flex-shrink-0"
+                      title={promptExpanded ? "收起" : "展开目录"}
+                    >
+                      <ChevronDown
+                        size={13}
+                        style={{
+                          transform: promptExpanded ? "rotate(180deg)" : "rotate(0deg)",
+                          transition: "transform 0.2s ease",
+                        }}
+                      />
+                    </button>
+                  )}
+                </div>
+
+                {/* Prompt sub-navigation */}
+                {isPrompts && !collapsed && promptExpanded && (
+                  <div
+                    className="ml-4 mt-0.5 mb-1 space-y-0.5 pl-3"
+                    style={{ borderLeft: `1px solid ${ch.color}30` }}
+                  >
+                    {PROMPT_CATEGORIES.map((cat, ci) => (
+                      <a
+                        key={ci}
+                        href={`/chapters/prompts#${cat.id}`}
+                        className="block px-2 py-1 rounded text-xs transition-colors opacity-70 hover:opacity-100 truncate"
+                        style={{ color: cat.color }}
+                      >
+                        {cat.label}
+                      </a>
+                    ))}
+                  </div>
                 )}
-              </Link>
+              </div>
             );
           })}
         </div>

@@ -57,6 +57,7 @@ export default function ChapterContent() {
     const items: { id: string; label: string }[] = [];
     items.push({ id: "sec-overview", label: "概述" });
     items.push({ id: "sec-keypoints", label: "核心要点" });
+    if (chapter.slug === "prompts") items.push({ id: "sec-prompt-index", label: "提示词索引" });
     if (chapter.insights && chapter.insights.length > 0) items.push({ id: "sec-insights", label: "设计亮点" });
     if (chapter.archNodes.length > 0) items.push({ id: "sec-arch", label: "架构图" });
     if (chapter.coreFiles.length > 0) items.push({ id: "sec-files", label: "核心文件" });
@@ -132,6 +133,53 @@ export default function ChapterContent() {
           ))}
         </div>
       </div>
+
+      {/* Prompt Index — only for the prompts chapter */}
+      {chapter.slug === "prompts" && (
+        <div id="sec-prompt-index" className="mb-8 animate-in" style={{ animationDelay: "0.18s" }}>
+          <h2 className="text-lg font-semibold mb-3">提示词索引</h2>
+          <div className="rounded-xl overflow-hidden" style={{ border: "1px solid var(--card-border)" }}>
+            {[
+              { cat: "系统提示", color: "#D97757", items: ["constants/prompts.ts — 主系统提示（14+ 分段动态拼接）"] },
+              { cat: "文件操作工具", color: "#C2785C", items: ["FileReadTool", "FileEditTool", "FileWriteTool"] },
+              { cat: "搜索工具", color: "#B8860B", items: ["GlobTool", "GrepTool"] },
+              { cat: "执行工具", color: "#8B7355", items: ["BashTool", "PowerShellTool", "SleepTool", "LSPTool", "NotebookEditTool"] },
+              { cat: "代理与计划工具", color: "#A0522D", items: ["AgentTool（Fork 模式）", "AskUserQuestionTool", "EnterPlanModeTool", "ExitPlanModeTool", "EnterWorktreeTool / ExitWorktreeTool"] },
+              { cat: "任务管理工具", color: "#EDA100", items: ["TaskCreate / Get / List / Update / Stop", "TodoWriteTool（旧版）", "SkillTool"] },
+              { cat: "网络工具", color: "#D97757", items: ["WebSearchTool", "WebFetchTool", "BriefTool / SendUserMessage"] },
+              { cat: "Swarm 多代理工具", color: "#C2785C", items: ["SendMessageTool", "TeamCreateTool / TeamDeleteTool", "RemoteTriggerTool", "ScheduleCronTool"] },
+              { cat: "MCP 集成工具", color: "#B8860B", items: ["ToolSearchTool（延迟加载）", "ListMcpResourcesTool / ReadMcpResourceTool", "ConfigTool"] },
+              { cat: "服务层提示", color: "#8B7355", items: ["compact/prompt.ts", "extractMemories/prompts.ts", "MagicDocs/prompts.ts", "SessionMemory/prompts.ts", "autoDream/consolidationPrompt.ts"] },
+              { cat: "特殊功能提示", color: "#A0522D", items: ["buddy/prompt.ts", "utils/claudeInChrome/prompt.ts", "utils/swarm/teammatePromptAddendum.ts"] },
+              { cat: "技能提示", color: "#EDA100", items: ["/simplify", "/batch", "/remember", "/skillify", "/loop", "/stuck", "/debug", "/claude-api", "/claude-in-chrome", "/update-config", "/schedule", "/keybindings-help", "/lorem-ipsum"] },
+            ].map((group, gi) => (
+              <div key={gi} style={{ borderBottom: gi < 11 ? "1px solid var(--card-border)" : undefined }}>
+                <div
+                  className="px-4 py-2 flex items-center gap-2"
+                  style={{ background: group.color + "10" }}
+                >
+                  <span
+                    className="text-xs font-bold px-2 py-0.5 rounded"
+                    style={{ background: group.color + "20", color: group.color }}
+                  >
+                    {group.cat}
+                  </span>
+                  <span className="text-xs" style={{ color: "var(--muted)" }}>
+                    {group.items.length} 个
+                  </span>
+                </div>
+                <div className="px-4 py-2 flex flex-wrap gap-x-4 gap-y-1">
+                  {group.items.map((item, ii) => (
+                    <span key={ii} className="text-xs font-mono" style={{ color: "var(--foreground)" }}>
+                      {item}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Design Insights */}
       {chapter.insights && chapter.insights.length > 0 && (
