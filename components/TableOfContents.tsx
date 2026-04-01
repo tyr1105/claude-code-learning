@@ -6,6 +6,7 @@ import { List } from "lucide-react";
 interface TocItem {
   id: string;
   label: string;
+  indent?: boolean;
 }
 
 interface TableOfContentsProps {
@@ -38,8 +39,8 @@ export default function TableOfContents({ items }: TableOfContentsProps) {
 
   return (
     <div
-      className="fixed right-6 top-1/3 hidden xl:block animate-fade"
-      style={{ width: 180, zIndex: 30 }}
+      className="fixed right-6 top-24 hidden xl:block animate-fade"
+      style={{ width: 192, zIndex: 30, maxHeight: "calc(100vh - 120px)", overflowY: "auto" }}
     >
       <div
         className="rounded-xl p-3"
@@ -62,11 +63,16 @@ export default function TableOfContents({ items }: TableOfContentsProps) {
                 e.preventDefault();
                 document.getElementById(item.id)?.scrollIntoView({ behavior: "smooth", block: "start" });
               }}
-              className="block px-2 py-1 rounded text-xs transition-all"
+              className="block rounded text-xs transition-all"
               style={{
                 color: activeId === item.id ? "var(--accent)" : "var(--muted)",
                 background: activeId === item.id ? "var(--accent)" + "10" : "transparent",
                 fontWeight: activeId === item.id ? 600 : 400,
+                paddingLeft: item.indent ? 16 : 8,
+                paddingRight: 8,
+                paddingTop: item.indent ? 2 : 4,
+                paddingBottom: item.indent ? 2 : 4,
+                fontSize: item.indent ? "10px" : "12px",
               }}
             >
               {item.label}
