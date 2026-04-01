@@ -3,6 +3,13 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
+  --sidebar-bg: #f8fafc;
+  --sidebar-border: #e2e8f0;
+  --card-bg: #ffffff;
+  --card-border: #e2e8f0;
+  --code-bg: #1e1e2e;
+  --accent: #3b82f6;
+  --muted: #64748b;
 }
 
 @theme inline {
@@ -14,13 +21,48 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --background: #0f172a;
+    --foreground: #e2e8f0;
+    --sidebar-bg: #1e293b;
+    --sidebar-border: #334155;
+    --card-bg: #1e293b;
+    --card-border: #334155;
+    --code-bg: #0f172a;
+    --accent: #60a5fa;
+    --muted: #94a3b8;
   }
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans, system-ui, sans-serif);
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--muted);
+  border-radius: 3px;
+}
+
+/* ReactFlow overrides */
+.react-flow__node {
+  cursor: pointer;
+}
+.react-flow__attribution {
+  display: none !important;
+}
+.react-flow__renderer,
+.react-flow__pane {
+  z-index: 0 !important;
+}
+.react-flow__panel {
+  z-index: 1 !important;
 }
