@@ -1881,14 +1881,13 @@ try {
     icon: "FileText",
     color: "#D97757",
     overview:
-      "Claude Code 源码中包含 60+ 个精心设计的提示词，分布在系统提示、工具提示、权限分类器、上下文压缩、记忆提取等各个模块。这些提示词是 Claude Code 智能行为的核心驱动力，每一条都经过深度优化以获得最佳模型输出。",
+      "Claude Code 源码中包含 96+ 个精心设计的提示词，分布在 7 大类别：系统提示、36 个工具提示、服务层提示、技能提示、特殊功能提示。每类提示词都有不同的设计目标和工程约束，共同驱动 Claude Code 的智能行为。本章按类别完整收录所有提示词原文及深度解析。",
     keyPoints: [
-      "主系统提示 — constants/prompts.ts，14+ 个分段构建",
-      "工具描述提示 — 每个工具的 description 字段",
-      "权限分类器提示 — 2 阶段 YOLO 分类器",
-      "上下文压缩提示 — services/compact/prompt.ts",
-      "记忆提取提示 — services/extractMemories/prompts.ts",
-      "特殊功能提示 — Buddy、Chrome、Swarm 协作",
+      "【系统提示】constants/prompts.ts — 14+ 分段动态构建的主提示",
+      "【工具提示】tools/*/prompt.ts — 36 个工具各自的描述与约束（BashTool/FileEditTool/FileReadTool/FileWriteTool/GlobTool/GrepTool/AgentTool/AskUserQuestionTool/EnterPlanModeTool/ExitPlanModeTool/EnterWorktreeTool/ExitWorktreeTool/SkillTool/TaskCreate~Stop/TeamCreate~Delete/SendMessageTool/TodoWriteTool/ToolSearchTool/WebSearchTool/WebFetchTool/BriefTool/ConfigTool/LSPTool/NotebookEditTool/PowerShellTool/ListMcpResources/ReadMcpResource/RemoteTriggerTool/ScheduleCronTool/SleepTool）",
+      "【服务提示】compact/prompt.ts 压缩、extractMemories/prompts.ts 记忆提取、MagicDocs 文档维护、SessionMemory 会话记忆、autoDream 记忆整合",
+      "【技能提示】skills/bundled/ — /simplify /batch /remember /skillify /loop /stuck /debug /claude-api /claude-in-chrome /update-config /schedule",
+      "【特殊功能】buddy/prompt.ts 伴侣角色、utils/claudeInChrome 浏览器自动化、utils/swarm/teammatePromptAddendum 多代理通信",
     ],
     archNodes: [
       { id: "system", label: "系统提示", description: "constants/prompts.ts", x: 250, y: 0, color: "#D97757" },
@@ -2676,6 +2675,549 @@ Query forms:
         description: "ToolSearch 是 Claude Code 的延迟加载机制：MCP 工具和部分工具不在初始 system prompt 里展示完整 schema，只公布名称。需要用时调用 ToolSearch 获取完整定义。这个设计减少了约 10.2% 的初始 token 消耗（MCP 工具种类很多），同时避免了工具定义变更导致的频繁 cache bust。",
       },
       {
+        title: "BriefTool（SendUserMessage）— KAIROS 模式通信协议",
+        language: "typescript",
+        code: `// tools/BriefTool/prompt.ts
+export const BRIEF_TOOL_PROMPT = \`Send a message the user will read. Text outside this tool is visible
+in the detail view, but most won't open it — the answer lives here.
+
+\\\`message\\\` supports markdown. \\\`attachments\\\` takes file paths (absolute or cwd-relative)
+for images, diffs, logs.
+
+\\\`status\\\` labels intent: 'normal' when replying to what they just asked;
+'proactive' when you're initiating — a scheduled task finished, a blocker surfaced
+during background work, you need input on something they haven't asked about.
+Set it honestly; downstream routing uses it.\`
+
+// BRIEF_PROACTIVE_SECTION（注入主系统提示的协议约定）：
+\`## Talking to the user
+
+SendUserMessage is where your replies go. Text outside it is visible if the user
+expands the detail view, but most won't — assume unread. Anything you want them
+to actually see goes through SendUserMessage. The failure mode: the real answer
+lives in plain text while SendUserMessage just says "done!" — they see "done!"
+and miss everything.
+
+So: every time the user says something, the reply they actually read comes through
+SendUserMessage. Even for "hi". Even for "thanks".
+
+If you can answer right away, send the answer. If you need to go look — run a
+command, read files, check something — ack first in one line ("On it — checking
+the test output"), then work, then send the result. Without the ack they're
+staring at a spinner.
+
+For longer work: ack → work → result. Between those, send a checkpoint when
+something useful happened — a decision you made, a surprise you hit, a phase
+boundary. Skip the filler ("running tests...") — a checkpoint earns its place
+by carrying information.
+
+Keep messages tight — the decision, the file:line, the PR number.
+Second person always ("your config"), never third.\``,
+        description: "BriefTool（在 KAIROS 实验模式下名为 SendUserMessage）解决了后台代理的输出可见性问题：代理的 plain text 输出只在展开的详情视图里可见，大多数用户不会展开。BriefTool 是用户实际读到的通道。Proactive 状态标记用于路由——后台任务完成、遇到阻塞器、需要用户输入时应标记为 proactive 而非 normal。",
+      },
+      {
+        title: "FileReadTool / FileWriteTool — 文件操作核心约束",
+        language: "typescript",
+        code: `// tools/FileReadTool/prompt.ts
+export function renderPromptTemplate(lineFormat, maxSizeInstruction, offsetInstruction): string {
+  return \`Reads a file from the local filesystem. You can access any file directly.
+Assume this tool is able to read all files on the machine. If the User provides
+a path to a file assume that path is valid. It is okay to read a file that does
+not exist; an error will be returned.
+
+Usage:
+- The file_path parameter must be an absolute path, not a relative path
+- By default, it reads up to 2000 lines starting from the beginning
+- You can optionally specify a line offset and limit (especially handy for long files),
+  but it's recommended to read the whole file by not providing these parameters
+- Results are returned using cat -n format, with line numbers starting at 1
+- This tool allows Claude Code to read images (PNG, JPG, etc.) visually
+- This tool can read PDF files (.pdf). For large PDFs (>10 pages), MUST provide
+  pages parameter. Reading a large PDF without it will fail. Max 20 pages per request.
+- This tool can read Jupyter notebooks (.ipynb files) with all outputs
+- This tool can only read files, not directories. Use Bash ls for directories.
+- If you read a file that exists but has empty contents you will receive
+  a system reminder warning in place of file contents.\`
+}
+
+// tools/FileWriteTool/prompt.ts
+export function getWriteToolDescription(): string {
+  return \`Writes a file to the local filesystem.
+
+Usage:
+- This tool will overwrite the existing file if there is one at the provided path.
+- If this is an existing file, you MUST use the Read tool first to read the file's
+  contents. This tool will fail if you did not read the file first.
+- Prefer the Edit tool for modifying existing files — it only sends the diff.
+  Only use this tool to create new files or for complete rewrites.
+- NEVER create documentation files (*.md) or README files unless explicitly
+  requested by the User.\`
+}`,
+        description: "FileReadTool 的限制清单（只能读文件、不能读目录、大 PDF 必须分页）和 FileWriteTool 的强制前置条件（写之前必须先读）是两个重要的设计约束。'只读文件不读目录'防止 Claude 意外读取整个目录树；'写前先读'确保 Claude 了解文件现有内容而不是盲目覆盖。",
+      },
+      {
+        title: "SleepTool — 等待工具的隐藏设计",
+        language: "typescript",
+        code: `// tools/SleepTool/prompt.ts
+export const SLEEP_TOOL_PROMPT = \`Wait for a specified duration.
+The user can interrupt the sleep at any time.
+
+Use this when the user tells you to sleep or rest, when you have nothing to do,
+or when you're waiting for something.
+
+You may receive <tick> prompts — these are periodic check-ins.
+Look for useful work to do before sleeping.
+
+You can call this concurrently with other tools — it won't interfere with them.
+
+Prefer this over Bash(sleep ...) — it doesn't hold a shell process.
+
+Each wake-up costs an API call, but the prompt cache expires after 5 minutes
+of inactivity — balance accordingly.\``,
+        description: "SleepTool 隐含了 prompt cache 的时效性约束：每次唤醒都消耗一次 API 调用，而 prompt cache 在 5 分钟无活动后过期。这意味着如果等待时间太长，cache 失效后下一次唤醒要重建 cache，成本和延迟都更高。'balance accordingly'是对模型的显式提醒：不要无谓地频繁唤醒，也不要让 cache 因长时间睡眠而失效。",
+      },
+      {
+        title: "WebFetchTool — 网页内容提取与版权约束",
+        language: "typescript",
+        code: `// tools/WebFetchTool/prompt.ts
+export const DESCRIPTION = \`
+- Fetches content from a specified URL and processes it using an AI model
+- Takes a URL and a prompt as input
+- Fetches the URL content, converts HTML to markdown
+- Processes the content with the prompt using a small, fast model
+- Returns the model's response about the content
+
+Usage notes:
+  - IMPORTANT: If an MCP-provided web fetch tool is available, prefer using
+    that tool instead of this one, as it may have fewer restrictions.
+  - HTTP URLs will be automatically upgraded to HTTPS
+  - Results may be summarized if the content is very large
+  - Includes a self-cleaning 15-minute cache for faster responses when
+    repeatedly accessing the same URL
+  - For GitHub URLs, prefer using the gh CLI via Bash instead.\`
+
+// makeSecondaryModelPrompt() — 非预审核域名的版权约束：
+// 非预审核来源会加上以下限制：
+// - 引用严格 125 字符上限
+// - 引用外的语言不能与原文一字不差
+// - 永远不复制歌词
+// 预审核域名（如 docs.anthropic.com）则允许更自由地引用文档`,
+        description: "WebFetchTool 用两套不同的 secondary model prompt 处理预审核域名和普通域名：普通域名有严格的 125 字符引用上限和'不复制歌词'约束，防止版权侵权。这个设计让工具在允许抓取任意网页的同时，内置了版权保护层——通过 secondary model 的 prompt 约束来实现，而不是在代码层面拦截。",
+      },
+      {
+        title: "ConfigTool — 动态生成的配置文档提示词",
+        language: "typescript",
+        code: `// tools/ConfigTool/prompt.ts — generatePrompt() 从注册表动态生成
+\`Get or set Claude Code configuration settings.
+
+## Usage
+- Get current value: Omit the "value" parameter
+- Set new value: Include the "value" parameter
+
+## Configurable settings list
+
+### Global Settings (stored in ~/.claude.json)
+- theme: "dark", "light", "light-daltonism", "dark-daltonism" - Color theme
+- editorMode: "emacs", "vim", "vscode" - ...
+- verbose: true/false - ...
+
+### Project Settings (stored in settings.json)
+- model - ...
+- permissions.defaultMode: "default", "plan", "acceptEdits", "bypassPermissions"
+...
+
+## Examples
+- Get theme: { "setting": "theme" }
+- Set dark theme: { "setting": "theme", "value": "dark" }
+- Enable vim mode: { "setting": "editorMode", "value": "vim" }
+- Change model: { "setting": "model", "value": "opus" }\`
+
+// 关键设计：提示词从 SUPPORTED_SETTINGS 注册表动态生成
+// 当 voiceEnabled 的 GrowthBook 开关关闭时，从文档中隐藏该设置
+// model 选项从 getModelOptions() 获取，始终与可用模型列表同步`,
+        description: "ConfigTool 的提示词完全从代码注册表（SUPPORTED_SETTINGS）动态生成，确保文档与代码永远同步——添加新设置时文档自动更新，无需手动维护。GrowthBook 开关控制某些功能（如语音）是否出现在提示词中，实现了功能文档的运行时开关。",
+      },
+      {
+        title: "LSPTool — 语言服务器协议集成",
+        language: "typescript",
+        code: `// tools/LSPTool/prompt.ts
+export const DESCRIPTION = \`Interact with Language Server Protocol (LSP) servers
+to get code intelligence features.
+
+Supported operations:
+- goToDefinition: Find where a symbol is defined
+- findReferences: Find all references to a symbol
+- hover: Get hover information (documentation, type info) for a symbol
+- documentSymbol: Get all symbols (functions, classes, variables) in a document
+- workspaceSymbol: Search for symbols across the entire workspace
+- goToImplementation: Find implementations of an interface or abstract method
+- prepareCallHierarchy: Get call hierarchy item at a position
+- incomingCalls: Find all functions/methods that call the function at a position
+- outgoingCalls: Find all functions/methods called by the function at a position
+
+All operations require:
+- filePath: The file to operate on
+- line: The line number (1-based, as shown in editors)
+- character: The character offset (1-based, as shown in editors)
+
+Note: LSP servers must be configured for the file type.
+If no server is available, an error will be returned.\``,
+        description: "LSPTool 将 IDE 级别的代码智能（跳转定义、查找引用、调用层次）直接集成到 Claude 的工具集中。9 种操作覆盖了代码导航的完整需求——Claude 可以不靠 Grep 的字符串匹配，而是通过 LSP 的语义理解找到符号的精确定义和所有引用，在大型代码库中更准确。",
+      },
+      {
+        title: "NotebookEditTool — Jupyter 笔记本操作",
+        language: "typescript",
+        code: `// tools/NotebookEditTool/prompt.ts
+export const PROMPT = \`Completely replaces the contents of a specific cell in a
+Jupyter notebook (.ipynb file) with new source.
+
+Jupyter notebooks are interactive documents that combine code, text, and
+visualizations, commonly used for data analysis and scientific computing.
+
+- The notebook_path parameter must be an absolute path, not a relative path
+- The cell_number is 0-indexed
+- Use edit_mode=insert to add a new cell at the index specified by cell_number
+- Use edit_mode=delete to delete the cell at the index specified by cell_number\``,
+        description: "NotebookEditTool 是专为数据科学工作流设计的工具，直接操作 .ipynb 文件的 cell 而不是把 notebook 作为普通文本处理。cell_number 使用 0-索引，insert/delete/replace 三种模式覆盖了笔记本编辑的完整需求。这让 Claude 能参与数据分析工作流而不必把 notebook 转为 .py 文件。",
+      },
+      {
+        title: "PowerShellTool — Windows 平台专属指令",
+        language: "typescript",
+        code: `// tools/PowerShellTool/prompt.ts — getPrompt()（核心规则摘要）
+
+// 版本检测后注入不同语法指导：
+// Windows PowerShell 5.1：
+// - && 和 || 不可用 → 用 A; if ($?) { B }
+// - 三元运算符、null合并不可用
+// - 文件编码默认 UTF-16 LE (with BOM)
+// PowerShell 7+：
+// - && 和 || 可用，与 bash 类似
+// - 三元运算符 ($cond ? $a : $b) 可用
+
+// 核心规则：
+// - 不允许使用 Read-Host、Get-Credential、Out-GridView 等交互命令
+// - 多行字符串用 here-string: @'...'@ (单引号字面量)
+//   @' 和 '@ 分别必须独占一行且顶格
+// - 注册表路径用 PSDrive: HKLM:\\SOFTWARE\\...（不能用原始格式）
+// - 环境变量: $env:NAME（不能用 Set-Variable 或 export）
+// - 专用工具优先：不要用 Get-ChildItem 替代 Glob，不要用 Select-String 替代 Grep
+
+// Git 安全约束（与 BashTool 相同）：
+// - 不允许 --no-verify
+// - 不允许 --no-gpg-sign
+// - 破坏性操作前评估是否有更安全的替代方案`,
+        description: "PowerShellTool 的版本感知设计是关键：5.1 和 7+ 的语法差异（&&、三元运算符、文件编码）如果混用会导致解析错误而不是运行时错误。PowerShell 的 here-string 格式要求（@' 必须顶格）非常严格，Claude 经常因缩进而出错——专门的提示词约束是防止这类语法错误的必要措施。",
+      },
+      {
+        title: "MCP 资源工具 — ListMcpResources / ReadMcpResource",
+        language: "typescript",
+        code: `// tools/ListMcpResourcesTool/prompt.ts
+export const PROMPT = \`List available resources from configured MCP servers.
+Each returned resource will include all standard MCP resource fields
+plus a 'server' field indicating which server the resource belongs to.
+
+Parameters:
+- server (optional): The name of a specific MCP server to get resources from.
+  If not provided, resources from all servers will be returned.\`
+
+// tools/ReadMcpResourceTool/prompt.ts
+export const PROMPT = \`Reads a specific resource from an MCP server,
+identified by server name and resource URI.
+
+Parameters:
+- server (required): The name of the MCP server from which to read the resource
+- uri (required): The URI of the resource to read\`
+
+// MCP 工具本身（tools/MCPTool/prompt.ts）：
+// PROMPT = '' / DESCRIPTION = ''
+// 实际内容在 mcpClient.ts 里根据 MCP 服务器的工具定义动态生成
+// 每个 MCP 工具的 name/description/inputSchema 来自服务器的 tools/list 响应`,
+        description: "MCP 资源工具（ListMcpResources/ReadMcpResource）访问的是 MCP 服务器的 Resource（静态数据）而不是 Tool（动态操作）。MCP 协议区分三种对象：Tools（可调用）、Resources（可读取）、Prompts（模板）。MCPTool 本身的 prompt.ts 是空文件，因为每个 MCP 工具的描述来自服务器运行时的 tools/list 响应，不能硬编码。",
+      },
+      {
+        title: "RemoteTriggerTool — 远程代理 API 调用",
+        language: "typescript",
+        code: `// tools/RemoteTriggerTool/prompt.ts
+export const PROMPT = \`Call the claude.ai remote-trigger API.
+Use this instead of curl — the OAuth token is added automatically in-process
+and never exposed.
+
+Actions:
+- list: GET /v1/code/triggers
+- get: GET /v1/code/triggers/{trigger_id}
+- create: POST /v1/code/triggers (requires body)
+- update: POST /v1/code/triggers/{trigger_id} (requires body, partial update)
+- run: POST /v1/code/triggers/{trigger_id}/run
+
+The response is the raw JSON from the API.\`
+
+// 安全设计：OAuth token 在进程内注入，不通过 shell 参数传递
+// 避免了 claude使用curl时 token 出现在进程列表/日志/shell history 中`,
+        description: "RemoteTriggerTool 的关键安全设计是'Use this instead of curl'——OAuth token 在进程内自动添加，永远不暴露给 shell。如果 Claude 用 curl 调 API，token 会出现在 Bash 参数里，被记录到 shell history 和进程列表中。这个工具封装了认证，让 Claude 在不知道 token 的情况下完成 API 调用。",
+      },
+      {
+        title: "ScheduleCronTool — 定时任务调度（持久化 vs 会话级）",
+        language: "typescript",
+        code: `// tools/ScheduleCronTool/prompt.ts — buildCronCreatePrompt()（核心设计）
+
+\`Schedule a prompt to be enqueued at a future time.
+
+## One-shot tasks (recurring: false)
+For "remind me at X" or "at <time>, do Y":
+  "remind me at 2:30pm today" → cron: "30 14 <today_dom> <today_month> *", recurring: false
+  "tomorrow morning, run smoke test" → cron: "57 8 <tomorrow_dom> <tomorrow_month> *"
+
+## Recurring jobs (recurring: true)
+  "*/5 * * * *" (every 5 min), "0 * * * *" (hourly)
+
+## Avoid the :00 and :30 minute marks when the task allows it
+
+Every user who asks for "9am" gets 0 9, and every user who asks for "hourly"
+gets 0 * — which means requests from across the planet land on the API at the
+same instant. When the user's request is approximate, pick a minute that is NOT 0 or 30:
+  "every morning around 9" → "57 8 * * *" (not "0 9 * * *")
+  "hourly" → "7 * * * *" (not "0 * * * *")
+
+Only use minute 0 or 30 when the user names that exact time clearly.
+
+## Durability (durable: true)
+Persist to .claude/scheduled_tasks.json so the job survives restarts.
+Only use durable: true when the user EXPLICITLY asks for the task to persist.
+Most "remind me in 5 minutes" requests should stay session-only.
+
+Recurring tasks auto-expire after 30 days.\``,
+        description: "ScheduleCronTool 的'避开整点和半点'规则是一个有趣的集群负载分散设计：如果所有用户都用 0 9 调度每日任务，它们会在同一秒击中 API。通过引导 Claude 选择随机偏移（如 57 8），把负载分散到整个分钟。持久化（durable: true）仅在用户明确要求时启用——防止会话结束后遗留大量后台任务。",
+      },
+      {
+        title: "Buddy 伴侣系统 — 宠物角色介绍协议",
+        language: "typescript",
+        code: `// buddy/prompt.ts — companionIntroText()
+export function companionIntroText(name: string, species: string): string {
+  return \`# Companion
+
+A small \${species} named \${name} sits beside the user's input box and occasionally
+comments in a speech bubble. You're not \${name} — it's a separate watcher.
+
+When the user addresses \${name} directly (by name), its bubble will answer.
+Your job in that moment is to stay out of the way: respond in ONE line or less,
+or just answer any part of the message meant for you.
+Don't explain that you're not \${name} — they know.
+Don't narrate what \${name} might say — the bubble handles that.\`
+}
+
+// 关键细节：
+// - Buddy 是一个独立的视觉元素（语音气泡），不是 Claude 本身
+// - 当用户直接称呼伴侣名字时，Claude 需要"让路"
+// - "ONE line or less"是严格限制——防止 Claude 喧宾夺主
+// - 伴侣名字和物种在每次会话开始时作为 attachment 注入
+// - 使用 companionMuted 全局配置控制是否静音`,
+        description: "Buddy 伴侣系统的提示词解决了'角色共存'问题：Claude 和 Buddy 同时存在于界面中，用户可能同时和两者说话。提示词的关键约束是'你不是 Buddy'和'不要旁白 Buddy 会说什么'——这防止了 Claude 越俎代庖，把 Buddy 的角色留给独立的语音气泡组件处理。",
+      },
+      {
+        title: "Chrome 浏览器自动化 — 防止阻塞和安全约束",
+        language: "markdown",
+        code: `# utils/claudeInChrome/prompt.ts — BASE_CHROME_PROMPT（核心规则）
+
+## GIF recording
+When performing multi-step browser interactions, use gif_creator to record them.
+- Capture extra frames before and after actions for smooth playback
+- Name files meaningfully (e.g., "login_process.gif")
+
+## Alerts and dialogs
+IMPORTANT: Do not trigger JavaScript alerts, confirms, prompts, or browser modal
+dialogs. These browser dialogs block ALL further browser events and will prevent
+the extension from receiving any subsequent commands.
+
+If a page has dialog-triggering elements:
+1. Avoid clicking buttons that may trigger alerts (e.g., "Delete" buttons)
+2. If you must interact with such elements, warn the user first
+3. Use javascript_tool to check for and dismiss any existing dialogs first
+
+## Avoid rabbit holes and loops
+When using browser automation tools, stay focused. If you encounter:
+- Browser tool calls failing after 2-3 attempts
+- No response from the browser extension
+- Page elements not responding after multiple approaches
+Stop and ask the user for guidance. Do not keep retrying.
+
+## Tab context and session startup
+IMPORTANT: At the start of each browser automation session, call
+mcp__claude-in-chrome__tabs_context_mcp FIRST to get information about
+the user's current browser tabs.
+
+Never reuse tab IDs from a previous/other session — always get fresh IDs.`,
+        description: "Chrome 自动化提示词有两个核心安全约束：禁止触发 JS 弹窗（alert/confirm/prompt）和禁止死循环重试。弹窗会阻塞浏览器扩展的消息队列导致整个自动化会话挂起；死循环重试会让浏览器进入不可恢复状态。'stop and ask after 2-3 failures'是防止 Claude 陷入自动化兔子洞的关键护栏。",
+      },
+      {
+        title: "Swarm Teammate 系统提示追加 — 通信可见性约束",
+        language: "typescript",
+        code: `// utils/swarm/teammatePromptAddendum.ts
+export const TEAMMATE_SYSTEM_PROMPT_ADDENDUM = \`
+# Agent Teammate Communication
+
+IMPORTANT: You are running as an agent in a team.
+To communicate with anyone on your team:
+- Use the SendMessage tool with \\\`to: "<name>"\\\` to send messages to specific teammates
+- Use the SendMessage tool with \\\`to: "*"\\\` sparingly for team-wide broadcasts
+
+Just writing a response in text is not visible to others on your team —
+you MUST use the SendMessage tool.
+
+The user interacts primarily with the team lead.
+Your work is coordinated through the task system and teammate messaging.
+\`
+
+// 这段追加文本会被 append 到每个 Teammate 代理的主系统提示末尾
+// 核心规则：plain text 输出在团队中不可见 → 必须用 SendMessage
+// 这与 BriefTool 的规则一致：text 只在 detail view 中可见，团队成员不读 detail view`,
+        description: "Teammate 系统提示追加解决了 Swarm 系统最常见的通信失败模式：代理生成了 plain text 输出，以为团队成员能看到，但实际上其他代理收不到任何通知。这个追加文本是注入到每个 Teammate 代理末尾的强制提醒，确保代理使用 SendMessage 而不是直接写输出来通信。",
+      },
+      {
+        title: "/claude-in-chrome — 浏览器自动化技能注册",
+        language: "typescript",
+        code: `// skills/bundled/claudeInChrome.ts
+
+const SKILL_ACTIVATION_MESSAGE = \`
+Now that this skill is invoked, you have access to Chrome browser automation tools.
+You can now use the mcp__claude-in-chrome__* tools to interact with web pages.
+
+IMPORTANT: Start by calling mcp__claude-in-chrome__tabs_context_mcp to get
+information about the user's current browser tabs.
+\`
+
+// 技能注册配置：
+registerBundledSkill({
+  name: 'claude-in-chrome',
+  description: 'Automates your Chrome browser to interact with web pages - clicking
+    elements, filling forms, capturing screenshots, reading console logs, and
+    navigating sites. Opens pages in new tabs within your existing Chrome session.',
+  whenToUse: 'When the user wants to interact with web pages, automate browser tasks,
+    capture screenshots, read console logs, or perform any browser-based actions.
+    Always invoke BEFORE attempting to use any mcp__claude-in-chrome__* tools.',
+  allowedTools: CLAUDE_IN_CHROME_MCP_TOOLS, // 动态从 @ant/claude-for-chrome-mcp 获取
+})
+
+// 注意：技能激活时的 prompt = BASE_CHROME_PROMPT + SKILL_ACTIVATION_MESSAGE
+// 激活消息告知模型现在可以使用 chrome 工具了，并提醒第一步必须调用 tabs_context`,
+        description: "/claude-in-chrome 技能是 MCP 工具的守门员：必须先调用技能才能使用 mcp__claude-in-chrome__* 工具（由 BLOCKING REQUIREMENT 和 whenToUse 强制）。技能激活时注入 BASE_CHROME_PROMPT（完整的操作规范）+ 激活提醒，而不是在初始系统提示里始终携带这段内容——这节省了 context 空间。",
+      },
+      {
+        title: "/claude-api — Anthropic SDK 使用指南技能",
+        language: "typescript",
+        code: `// skills/bundled/claudeApi.ts — 设计亮点
+
+// 1. 语言自动检测（检查工作目录文件特征）：
+// .py / requirements.txt / pyproject.toml → python
+// .ts / .tsx / tsconfig.json / package.json → typescript
+// .java / pom.xml / build.gradle → java
+// .go / go.mod → go ... 等 8 种语言
+
+// 2. 247KB 文档懒加载（claudeApiContent.ts）：
+// import('./claudeApiContent.js') 只在技能被调用时执行
+// 避免在启动时把 247KB 的文档注入到内存
+
+// 3. 文档按场景索引（Quick Task Reference）：
+// 单次分类/总结 → {lang}/claude-api/README.md
+// 实时流式输出 → README.md + streaming.md
+// 长对话/超出上下文 → README.md（Compaction 章节）
+// Prompt 缓存 → shared/prompt-caching.md + README.md
+// Function calling → README.md + shared/tool-use-concepts.md + {lang}/tool-use.md
+// Batch 处理 → README.md + {lang}/batches.md
+
+// 触发条件（whenToUse 判断）：
+// - 代码 import anthropic / @anthropic-ai/sdk / claude_agent_sdk
+// - 用户询问如何使用 Claude API 或 Anthropic SDK
+// 不触发：import openai / 通用编程 / ML-数据科学任务`,
+        description: "/claude-api 技能的懒加载设计（247KB 文档在调用时才加载）和语言自动检测是两个关键工程决策。检测当前项目语言后只注入对应语言的文档（而不是全部 8 种语言），避免了用不相关的 Java 文档填充 Python 项目的 context。触发条件的精确定义（不触发 openai SDK 项目）防止了误用。",
+      },
+      {
+        title: "/debug — 会话调试日志读取技能",
+        language: "typescript",
+        code: `// skills/bundled/debug.ts — registerDebugSkill()
+
+// 两种模式（基于 USER_TYPE）：
+// Anthropic 内部：读取已有的调试日志（始终开启）
+// 外部用户：激活调试日志（默认未开启），然后指导重现问题
+
+// 日志读取策略（防止内存溢出）：
+// - 只读最后 64KB（TAIL_READ_BYTES）
+// - 不读整个文件，调试日志在长会话中无限增长
+// - 显示最后 20 行（DEFAULT_DEBUG_LINES_READ）
+
+// 生成的 prompt 包含：
+// - 调试日志路径
+// - 日志文件大小 + 最后 N 行内容
+// - 如果刚刚启用日志：提醒用户复现问题后再重新调用
+// - 设置文件路径（user/project/local）
+// - 指导步骤：读日志 → 找 ERROR/WARN → 启动 claude-code-guide 子代理理解特性 → 解释 → 建议修复
+
+// 关键安全设计：disableModelInvocation: true
+// 防止模型在用户没有明确请求时自动调用 /debug`,
+        description: "/debug 技能的核心挑战是调试日志可能非常大（无限增长）。'只读最后 64KB'的截尾策略平衡了信息量和内存消耗。两种模式（ANT 内部始终有日志 vs 外部用户默认无日志）解决了不同环境下的调试体验差异。disableModelInvocation 确保 Claude 不会自动触发调试技能，需要用户显式调用。",
+      },
+      {
+        title: "/update-config — 配置更新与 Hooks 管理技能",
+        language: "markdown",
+        code: `# skills/bundled/updateConfig.ts — UPDATE_CONFIG_PROMPT + HOOKS_DOCS + HOOK_VERIFICATION_FLOW
+
+## 核心：Memory vs Hooks 的区别
+If the user wants something to happen automatically in response to an EVENT,
+they need a HOOK configured in settings.json. Memory/preferences cannot trigger actions.
+
+These require hooks (not memory):
+- "Before compacting, ask me what to preserve" → PreCompact hook
+- "After writing files, run prettier" → PostToolUse hook with Write|Edit matcher
+- "When I run bash commands, log them" → PreToolUse hook with Bash matcher
+
+## Decision: Config Tool vs Direct Edit
+Use Config tool for: theme, editorMode, verbose, model, language
+Edit settings.json directly for: Hooks, complex permissions, env vars, MCP servers
+
+## Hook 验证流程（HOOK_VERIFICATION_FLOW — 6步）
+1. Dedup check — 读目标文件，检查同事件+matcher 的 hook 是否已存在
+2. 构建命令 — 正确从 stdin JSON 提取路径（用 jq -r 到引用变量，不用 xargs）
+3. Pipe-test raw command — 用合成的 stdin 直接 pipe 测试，检查退出码和副作用
+4. Write the JSON — 合并到目标文件（保留现有设置，不替换整个文件）
+5. Validate — jq -e 验证 JSON 语法 + schema 正确性
+6. Prove the hook fires — 对 Pre|PostToolUse 类型实际触发并验证（Stop/SessionStart 跳过）
+   - 若测试通过但 pipe-test 也通过：watcher 未监视 .claude/ → 让用户打开 /hooks 或重启
+
+## Merging arrays（CRITICAL）
+WRONG: {"permissions": {"allow": ["Bash(npm:*)"]}}  // 替换已有权限
+RIGHT: preserve existing + add new in one object`,
+        description: "/update-config 技能包含了大量工程最佳实践：Hook 的 6 步验证流程（包括实际 pipe 测试）、Merge vs Replace 的数组操作区别、以及 Memory 和 Hooks 的核心差异。HOOK_VERIFICATION_FLOW 是全仓库中最详细的工具使用指南之一——'管道测试后再写文件'的实践完全可以避免静默失败的 hooks。",
+      },
+      {
+        title: "/schedule — 远程代理调度技能",
+        language: "markdown",
+        code: `# skills/bundled/scheduleRemoteAgents.ts — buildPrompt()
+
+## 与 /loop 的关键区别
+/loop → 本地 cron，在当前 Claude 会话中运行，会话结束后消失
+/schedule → 远程 agent，在 Anthropic 云基础设施（CCR）中运行，有独立 git checkout
+
+## 远程代理的限制
+- 无法访问本地文件、本地服务、本地环境变量
+- 每次触发都是全新的沙箱环境
+- 最小触发间隔：1小时（*/30 * * * * 会被拒绝）
+
+## 时区处理
+用户的本地时区通过 Intl.DateTimeFormat().resolvedOptions().timeZone 获取
+Cron 表达式使用 UTC，转换时需向用户确认：
+"9am Asia/Shanghai = 1am UTC，cron 会是 0 1 * * 1-5，对吗？"
+
+## 创建工作流（5步）
+1. 理解目标 — 问清楚要做什么，提醒远程代理无法访问本地资源
+2. 撰写 prompt — 远程代理从零 context 开始，prompt 必须完全自包含
+3. 设置调度 — 确认时区转换
+4. 验证连接 — 推断需要哪些 MCP connectors，检查是否已连接
+5. 确认并创建 — 展示完整配置后再创建，结果包含链接 claude.ai/code/scheduled/{TRIGGER_ID}
+
+## 安全约束
+OAuth token 通过 RemoteTriggerTool 在进程内传递，永不暴露给 shell`,
+        description: "/schedule 技能是 /loop 的云端对等体：本地任务用 /loop，云端持久任务用 /schedule。完整的编排流程包括时区转换确认（避免用户搞错 UTC）、MCP connector 推断（从用户描述推断需要哪些服务）、和 GitHub App 检查（确保远程代理有代码访问权限）。Prompt 的自包含性是最重要的要求——远程代理没有任何历史 context。",
+      },
+      {
         title: "MagicDocs — 自动维护文档的提示词",
         language: "markdown",
         code: `# services/MagicDocs/prompts.ts — getUpdatePromptTemplate()
@@ -3027,14 +3569,21 @@ Output as yaml code block for user review, then ask confirmation via AskUserQues
       { from: "send", to: "parse" },
     ],
     details: [
-      "Claude Code 的主系统提示并非一个静态字符串，而是由 14+ 个分段函数动态拼接而成。每个分段负责一个方面的行为规范（身份、工具使用、安全、输出效率等），运行时还会注入 MCP 配置、记忆文件、项目 CLAUDE.md 内容。",
-      "提示词工程的核心技巧之一是 XML 标签结构化输出。压缩提示用 <analysis>/<summary>，分类器用 <block>/<reason>，记忆提取用 <memory type='...'>。模型按标签格式输出，代码按标签解析——比 JSON 更鲁棒，因为不会因为单个字符错误导致解析失败。",
-      "YOLO 分类器的 Stage 1 提示故意设计得非常简短，限制模型输出最多 64 个 token。这不是偷懒，而是有意为之：简短提示让模型快速做出直觉判断，就像人类的'快思考'系统，减少过度分析带来的延迟。",
-      "记忆提取提示中明确列出了'不要保存什么'：代码模式、架构细节（可从代码推导）、临时任务细节。这个负面约束和正面约束同等重要——防止记忆系统被低价值信息淹没。",
-      "Chrome 自动化提示的安全红线（不提交表单、不进行交易）是用大写 IMPORTANT 标记的强约束，不是建议。这些红线保护用户免受浏览器自动化操作的意外后果，即使用户明确要求也不会执行。",
-      "Swarm 协作提示中的 assignedFiles 列表是防止多代理冲突的关键机制。每个代理被明确告知自己负责哪些文件，不应修改其他文件。即使代理在技术上有能力修改任何文件，提示词约束让它们'自觉'保持在各自的范围内。",
-      "技能提示词 encode 了 Anthropic 团队积累的最佳实践。/commit 技能不只是'帮我 commit'，它还规定了具体步骤（先看 log 了解风格）、安全约束（不用 --no-verify）、输出格式（添加 Co-Authored-By）——把专家知识固化为可重复的流程。",
-      "提示词版本管理是一个隐藏的挑战：prompt cache（1小时TTL）要求提示词字节完全一致才能命中缓存。修改提示词不只是改文案，可能导致 cache miss，增加延迟和成本。所以提示词修改需要仔细评估影响。",
+      "【提示词全目录 — 第一类：系统提示】constants/prompts.ts 包含主系统提示的所有构建块：身份定义（你是 Claude Code）、工具使用指南（何时用哪个工具）、安全行为守则（git 操作规范、不绕过 hooks）、输出效率（不写冗余注释）、环境信息注入（当前时间、工作目录、shell）。14+ 个分段在每次会话开始时动态拼接，固定部分命中 prompt cache，动态部分附加在末尾。",
+      "【提示词全目录 — 第二类：文件操作工具】FileReadTool（绝对路径、2000行限制、PDF分页、目录用Bash ls）、FileEditTool（读前写、old_string唯一性约束、优先Edit而非Write）、FileWriteTool（只用于新建和完整重写、不创建 README 除非明确要求）。这三个工具构成 Claude 与文件系统的核心接口。",
+      "【提示词全目录 — 第三类：搜索工具】GlobTool（按名称模式搜索、按修改时间排序）、GrepTool（ripgrep 封装、禁止用 Bash 调 grep/rg、支持正则/glob/type 过滤、多行模式）。关键约束：都明确禁止通过 Bash 工具调用系统命令，因为工具封装了正确的权限控制。",
+      "【提示词全目录 — 第四类：执行工具】BashTool（最复杂的工具，git 安全协议 + 危险操作约束 + 并行命令建议 + 超时设置）、PowerShellTool（版本感知，5.1 vs 7+ 语法差异，here-string 格式要求，禁止交互命令）、SleepTool（优先于 Bash sleep，注意 cache 5 分钟过期）、LSPTool（9 种语义操作）、NotebookEditTool（cell 操作，0-索引）。",
+      "【提示词全目录 — 第五类：代理与计划工具】AgentTool（标准模式 vs Fork 模式，Don't peek/Don't race）、AskUserQuestionTool（4 种使用场景，Preview 特性）、EnterPlanModeTool（外部版7条件 vs 内部版更保守）、ExitPlanModeTool（读文件而非接收参数，计划持久化到磁盘）、EnterWorktreeTool/ExitWorktreeTool（必须明确说 worktree 才能用）。",
+      "【提示词全目录 — 第六类：任务与技能管理】TaskCreate/Get/List/Update/Stop 五个工具（开始前标记 in_progress、完成条件严格）、TodoWriteTool（旧版，单数组操作）、SkillTool（BLOCKING REQUIREMENT + 预算系统 1% context window）、ConfigTool（从注册表动态生成，GrowthBook 控制文档可见性）。",
+      "【提示词全目录 — 第七类：网络与通信工具】WebSearchTool（强制 Sources 引用 + 使用当前年份）、WebFetchTool（预审核域名 vs 普通域名，版权约束，125字符引用上限）、BriefTool/SendUserMessage（KAIROS 模式，plain text 不可见，ack-work-result 三段式）。",
+      "【提示词全目录 — 第八类：Swarm 多代理工具】SendMessageTool（plain text 不可见，必须用工具，广播 * 成本高）、TeamCreate/Delete（团队=任务列表，idle 是正常状态，shutdown_request 协议）、RemoteTriggerTool（in-process OAuth，永不暴露到 shell）、ScheduleCronTool（避开整点半点，durable 仅明确要求时启用，30天自动过期）。",
+      "【提示词全目录 — 第九类：MCP 集成工具】ToolSearchTool（延迟加载，减少 10.2% 初始 cache_creation token）、ListMcpResourcesTool/ReadMcpResourceTool（Resource vs Tool 的 MCP 协议区分）、MCPTool（prompt.ts 空文件，实际内容由 mcpClient.ts 动态生成）。",
+      "【提示词全目录 — 第十类：服务层提示】compact/prompt.ts（BASE/PARTIAL/NO_TOOLS 三套，9段摘要结构）、extractMemories/prompts.ts（4种记忆类型，两步保存流程，明确的不保存清单）、MagicDocs（活文档哲学：IN-PLACE 更新，不记录历史）、SessionMemory（10分段模板，结构不可破坏）、autoDream（4阶段记忆整合，grep 而不是全读）。",
+      "【提示词全目录 — 第十一类：特殊功能提示】buddy/prompt.ts（宠物角色共存，让路规则）、utils/claudeInChrome/prompt.ts（弹窗阻塞保护，2-3次失败即停）、utils/swarm/teammatePromptAddendum.ts（追加到 Teammate 系统提示，plain text 在团队不可见）。",
+      "【提示词全目录 — 第十二类：技能提示】/simplify（三代理并行：复用/质量/效率）、/batch（5-30 worker 隔离 worktree + WORKER_INSTRUCTIONS）、/remember（记忆层分级审查，先提案后执行）、/skillify（会话转技能，4轮访谈，关注用户纠正）、/loop（自然语言→cron，立即执行一次，负载分散）、/stuck（ANT专属，进程诊断）、/debug（懒加载日志，64KB 截尾）、/claude-api（247KB 文档懒加载，语言自动检测）、/claude-in-chrome（先调技能才能用 MCP 工具）、/update-config（Memory vs Hooks 区别，6步 Hook 验证）、/schedule（远程 CCR agent，prompt 完全自包含）。",
+      "提示词工程的核心技巧之一是 XML 标签结构化输出：比 JSON 更鲁棒（单个字符错误不会导致整体解析失败），被广泛用于压缩提示（<analysis>/<summary>）、分类器（<block>/<reason>）、记忆提取（<memory type='...'>）等场景。",
+      "YOLO 分类器的 Stage 1 提示故意设计得非常简短，限制模型输出最多 64 个 token——模拟人类的'快思考'系统，减少过度分析带来的延迟。Stage 2 才进行深度推理。两阶段设计平衡了速度和准确性。",
+      "提示词版本管理是一个隐藏的挑战：prompt cache（1小时TTL）要求提示词字节完全一致才能命中缓存。任何空格修改都会导致 cache miss。工具提示词变更尤其昂贵——如果 SkillTool 的技能列表（动态生成）频繁变化，会持续 bust cache，这就是为什么技能列表被移到 agent_listing_delta attachment 里单独处理。",
     ],
     insights: [
       {
