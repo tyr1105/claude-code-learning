@@ -1,15 +1,16 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-  --sidebar-bg: #f8fafc;
-  --sidebar-border: #e2e8f0;
-  --card-bg: #ffffff;
-  --card-border: #e2e8f0;
-  --code-bg: #1e1e2e;
-  --accent: #3b82f6;
-  --muted: #64748b;
+  --background: #FAF9F5;
+  --foreground: #1A1915;
+  --sidebar-bg: #F0EEE6;
+  --sidebar-border: #E0DDD4;
+  --card-bg: #FFFFFF;
+  --card-border: #E8E5DC;
+  --code-bg: #292524;
+  --accent: #D97757;
+  --accent-secondary: #EDA100;
+  --muted: #8C8B84;
 }
 
 @theme inline {
@@ -21,15 +22,16 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0f172a;
-    --foreground: #e2e8f0;
-    --sidebar-bg: #1e293b;
-    --sidebar-border: #334155;
-    --card-bg: #1e293b;
-    --card-border: #334155;
-    --code-bg: #0f172a;
-    --accent: #60a5fa;
-    --muted: #94a3b8;
+    --background: #1C1B18;
+    --foreground: #E8E5DC;
+    --sidebar-bg: #252420;
+    --sidebar-border: #3A3830;
+    --card-bg: #252420;
+    --card-border: #3A3830;
+    --code-bg: #1C1B18;
+    --accent: #E0916E;
+    --accent-secondary: #F0B840;
+    --muted: #9C9B94;
   }
 }
 
@@ -38,6 +40,10 @@ body {
   color: var(--foreground);
   font-family: var(--font-sans, system-ui, sans-serif);
   transition: background 0.3s ease, color 0.3s ease;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: Georgia, "Noto Serif SC", "Source Han Serif SC", serif;
 }
 
 /* ============================================
@@ -117,7 +123,7 @@ button:active {
   top: 0;
   left: 0;
   height: 3px;
-  background: linear-gradient(90deg, var(--accent), #a855f7);
+  background: linear-gradient(90deg, var(--accent), var(--accent-secondary, #EDA100));
   z-index: 100;
   transition: width 0.1s linear;
 }

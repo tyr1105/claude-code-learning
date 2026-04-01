@@ -25,12 +25,12 @@ const HomeArchitectureGraph = dynamic(
 );
 
 const statItems = [
-  { label: "源文件", value: stats.totalFiles, display: stats.totalFiles.toLocaleString(), icon: FileCode, color: "#3B82F6" },
-  { label: "代码行数", value: Math.round(stats.totalLines / 1000), display: Math.round(stats.totalLines / 1000) + "K", icon: Code2, color: "#EF4444" },
-  { label: "内置工具", value: stats.tools, display: stats.tools.toString(), icon: Wrench, color: "#10B981" },
-  { label: "命令", value: stats.commands, display: stats.commands.toString(), icon: Terminal, color: "#8B5CF6" },
-  { label: "React Hooks", value: stats.hooks, display: stats.hooks.toString(), icon: Cpu, color: "#F59E0B" },
-  { label: "UI 组件", value: stats.components, display: stats.components.toString(), icon: GitBranch, color: "#EC4899" },
+  { label: "源文件", value: stats.totalFiles, display: stats.totalFiles.toLocaleString(), icon: FileCode, color: "#D97757" },
+  { label: "代码行数", value: Math.round(stats.totalLines / 1000), display: Math.round(stats.totalLines / 1000) + "K", icon: Code2, color: "#C2785C" },
+  { label: "内置工具", value: stats.tools, display: stats.tools.toString(), icon: Wrench, color: "#B8860B" },
+  { label: "命令", value: stats.commands, display: stats.commands.toString(), icon: Terminal, color: "#8B7355" },
+  { label: "React Hooks", value: stats.hooks, display: stats.hooks.toString(), icon: Cpu, color: "#EDA100" },
+  { label: "UI 组件", value: stats.components, display: stats.components.toString(), icon: GitBranch, color: "#A0522D" },
 ];
 
 function AnimatedNumber({ target, suffix = "" }: { target: number; suffix?: string }) {
@@ -66,7 +66,7 @@ export default function HomePage() {
         <h1
           className="text-3xl font-bold mb-2"
           style={{
-            background: "linear-gradient(135deg, var(--accent), #a855f7, #ec4899)",
+            background: "linear-gradient(135deg, var(--accent), var(--accent-secondary, #EDA100), #C2785C)",
             WebkitBackgroundClip: "text",
             WebkitTextFillColor: "transparent",
             backgroundClip: "text",

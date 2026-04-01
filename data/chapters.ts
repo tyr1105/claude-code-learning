@@ -1874,6 +1874,394 @@ try {
       },
     ],
   },
+  {
+    slug: "prompts",
+    title: "提示词收录",
+    subtitle: "源码中所有提示词的完整提取与解析",
+    icon: "FileText",
+    color: "#D97757",
+    overview:
+      "Claude Code 源码中包含 60+ 个精心设计的提示词，分布在系统提示、工具提示、权限分类器、上下文压缩、记忆提取等各个模块。这些提示词是 Claude Code 智能行为的核心驱动力，每一条都经过深度优化以获得最佳模型输出。",
+    keyPoints: [
+      "主系统提示 — constants/prompts.ts，14+ 个分段构建",
+      "工具描述提示 — 每个工具的 description 字段",
+      "权限分类器提示 — 2 阶段 YOLO 分类器",
+      "上下文压缩提示 — services/compact/prompt.ts",
+      "记忆提取提示 — services/extractMemories/prompts.ts",
+      "特殊功能提示 — Buddy、Chrome、Swarm 协作",
+    ],
+    archNodes: [
+      { id: "system", label: "系统提示", description: "constants/prompts.ts", x: 250, y: 0, color: "#D97757" },
+      { id: "tools", label: "工具提示", description: "tools/*/prompt.ts", x: 50, y: 150, color: "#EDA100" },
+      { id: "compact", label: "压缩提示", description: "services/compact/", x: 200, y: 150, color: "#C2785C" },
+      { id: "yolo", label: "分类器提示", description: "yoloClassifier.ts", x: 350, y: 150, color: "#B8860B" },
+      { id: "memory", label: "记忆提示", description: "extractMemories/", x: 500, y: 150, color: "#8B7355" },
+      { id: "special", label: "特殊功能", description: "buddy/chrome/swarm", x: 150, y: 300, color: "#A0522D" },
+      { id: "skills", label: "技能提示", description: "skills/bundled/", x: 350, y: 300, color: "#D97757" },
+    ],
+    archEdges: [
+      { source: "system", target: "tools", label: "组合" },
+      { source: "system", target: "compact" },
+      { source: "system", target: "yolo" },
+      { source: "system", target: "memory" },
+      { source: "tools", target: "special" },
+      { source: "compact", target: "skills" },
+    ],
+    coreFiles: [
+      { path: "constants/prompts.ts", lines: 800, description: "主系统提示词，14+ 个分段拼接构建完整系统提示" },
+      { path: "services/compact/prompt.ts", lines: 200, description: "上下文压缩提示词，指导 AI 生成结构化摘要" },
+      { path: "utils/permissions/yoloClassifier.ts", lines: 300, description: "YOLO 权限分类器提示词，2 阶段 fast+thinking" },
+      { path: "services/extractMemories/prompts.ts", lines: 150, description: "记忆提取提示词，从对话中自动提炼用户偏好" },
+      { path: "utils/buddy/prompt.ts", lines: 100, description: "Buddy 宠物个性化提示词" },
+      { path: "utils/claudeInChrome/prompt.ts", lines: 200, description: "Chrome 浏览器自动化提示词" },
+      { path: "utils/swarm/teammatePromptAddendum.ts", lines: 150, description: "Swarm 多代理协作提示词补充" },
+      { path: "skills/bundled/", lines: 800, description: "17 个内置技能的提示词模板" },
+    ],
+    codeSnippets: [
+      {
+        title: "主系统提示 — constants/prompts.ts",
+        language: "typescript",
+        code: `// constants/prompts.ts - 主系统提示（简化）
+// 完整系统提示由 14+ 个分段动态拼接而成
+
+// 第 1 段：核心身份定义
+export const CORE_IDENTITY = \`
+You are Claude Code, Anthropic's official CLI for Claude.
+You are an interactive agent that helps users with
+software engineering tasks.
+\`
+
+// 第 2 段：工具使用规范
+export const TOOL_USE_INSTRUCTIONS = \`
+IMPORTANT: Assist with authorized security testing,
+defensive security, CTF challenges, and educational contexts.
+Refuse requests for destructive techniques...
+\`
+
+// 第 3 段：执行原则
+export const EXECUTION_PRINCIPLES = \`
+# Doing tasks
+- The user will primarily request software engineering tasks.
+- You are highly capable and often allow users to complete
+  ambitious tasks that would otherwise be too complex.
+- In general, do not propose changes to code you haven't read.
+\`
+
+// 第 4 段：输出效率
+export const OUTPUT_EFFICIENCY = \`
+# Output efficiency
+IMPORTANT: Go straight to the point.
+Try the simplest approach first without going in circles.
+Do not overdo it. Be extra concise.
+\`
+
+// 第 5 段：安全原则
+export const SAFETY_PRINCIPLES = \`
+# Executing actions with care
+Carefully consider the reversibility and blast radius
+of actions. Generally you can freely take local,
+reversible actions like editing files or running tests.
+\`
+
+// 完整系统提示由上述分段 + 动态注入内容拼接
+export function buildSystemPrompt(context: Context): string {
+  return [
+    CORE_IDENTITY,
+    TOOL_USE_INSTRUCTIONS,
+    EXECUTION_PRINCIPLES,
+    OUTPUT_EFFICIENCY,
+    SAFETY_PRINCIPLES,
+    buildEnvironmentSection(context),
+    buildMCPSection(context),
+    buildMemorySection(context),
+    buildProjectSection(context),
+    // ... 更多动态分段
+  ].filter(Boolean).join('\\n\\n')
+}`,
+        description: "主系统提示由 14+ 个分段动态拼接，每段负责不同的行为规范。运行时还会注入环境信息、MCP 配置、记忆文件、项目 CLAUDE.md 等动态内容。",
+      },
+      {
+        title: "权限分类器提示 — yoloClassifier.ts",
+        language: "typescript",
+        code: `// utils/permissions/yoloClassifier.ts
+// YOLO 模式下的 2 阶段自动权限分类器
+
+// Stage 1: Fast 分类器（最多 64 个 token）
+export const YOLO_FAST_CLASSIFIER_PROMPT = \`
+You are a security classifier for an AI coding assistant.
+Your job: decide if the requested tool use should be BLOCKED.
+
+Respond with ONLY:
+<block>yes</block>  — if this should be blocked
+<block>no</block>   — if this is safe to allow
+
+Rules:
+- Block: rm -rf /, dropping databases, force-pushing to main
+- Block: sending emails/messages to external parties
+- Block: accessing credentials, secrets, private keys
+- Allow: reading files, running tests, editing code
+- Allow: git operations (except force-push to protected branches)
+- When uncertain: allow (Stage 2 will catch dangerous cases)
+
+Tool: {toolName}
+Input: {toolInput}
+\`
+
+// Stage 2: Thinking 分类器（深度推理）
+export const YOLO_THINKING_CLASSIFIER_PROMPT = \`
+You are a careful security reviewer for an AI coding assistant.
+A fast classifier flagged this tool use as potentially dangerous.
+Your job: make the final decision with careful reasoning.
+
+<thinking>
+Analyze step by step:
+1. What will this tool call actually do?
+2. Is it reversible?
+3. Could it cause data loss or security issues?
+4. Is it within the scope of normal coding tasks?
+</thinking>
+
+Respond with:
+<block>yes</block><reason>specific reason</reason>
+OR
+<block>no</block><reason>why it is safe</reason>
+
+Tool: {toolName}
+Input: {toolInput}
+Context: {recentHistory}
+\``,
+        description: "2 阶段分类器：Stage 1 用极少 token 快速判断，Stage 2 用深度推理处理边界情况。两阶段共享 prompt cache，Stage 2 几乎不增加额外成本。",
+      },
+      {
+        title: "上下文压缩提示 — services/compact/prompt.ts",
+        language: "typescript",
+        code: `// services/compact/prompt.ts
+// 当对话接近上下文限制时，触发压缩
+
+export const COMPACT_SYSTEM_PROMPT = \`
+Your task is to create a detailed summary of the conversation
+so far, paying close attention to the user's explicit requests
+and your previous actions.
+
+This summary will be used as context for continuing the work.
+\`
+
+export const COMPACT_USER_PROMPT = \`
+Please summarize the conversation above.
+Focus on:
+1. What the user asked for originally
+2. What has been accomplished so far
+3. What files were created or modified (with key details)
+4. What still needs to be done
+5. Any important decisions or constraints discovered
+
+Output format:
+<analysis>
+[Your internal analysis of what's important — NOT included in output]
+</analysis>
+<summary>
+[The actual summary that will replace the conversation]
+</summary>
+
+Keep the summary detailed enough that work can continue
+seamlessly, but concise enough to save context space.
+\`
+
+// 压缩后自动重注入的内容
+export const POST_COMPACT_INJECTION = \`
+[Note: Earlier conversation was summarized to save context.
+The most recently used files have been re-injected below.]
+\``,
+        description: "压缩提示使用 analysis/summary 双标签设计：AI 先在 analysis 里打草稿，只有 summary 里的内容进入压缩后的上下文，节省空间同时保留推理质量。",
+      },
+      {
+        title: "记忆提取提示 — extractMemories/prompts.ts",
+        language: "typescript",
+        code: `// services/extractMemories/prompts.ts
+// 从对话中自动提炼用户偏好和项目信息
+
+export const EXTRACT_MEMORIES_SYSTEM = \`
+You are a memory extraction assistant. Your job is to identify
+information worth remembering from the conversation for future sessions.
+\`
+
+export const EXTRACT_MEMORIES_USER = \`
+Review this conversation and extract memories worth saving.
+
+Types of memories to extract:
+- user: User preferences, role, expertise, working style
+- feedback: How the user wants you to behave (corrections/confirmations)
+- project: Project-specific facts, decisions, deadlines
+- reference: External resources, docs, tools the user mentioned
+
+Format each memory as:
+<memory type="user|feedback|project|reference">
+  <title>Short descriptive title</title>
+  <content>The actual memory content</content>
+  <description>One-line description for future relevance decisions</description>
+</memory>
+
+Rules:
+- Only extract genuinely useful, non-obvious information
+- Do NOT save code patterns or architectural details (derivable from code)
+- Do NOT save ephemeral task details
+- DO save user corrections to your behavior
+- DO save non-obvious project constraints or decisions
+\``,
+        description: "记忆提取提示引导 AI 识别哪些信息值得跨会话保留，并分类为 user/feedback/project/reference 四种类型，形成持久化的用户画像。",
+      },
+      {
+        title: "Chrome 自动化提示 — claudeInChrome/prompt.ts",
+        language: "typescript",
+        code: `// utils/claudeInChrome/prompt.ts
+// Claude 控制 Chrome 浏览器的专用提示词
+
+export const CHROME_SYSTEM_PROMPT = \`
+You are Claude, operating as a browser automation assistant.
+You have access to a Chrome browser through the MCP protocol.
+
+When automating web tasks:
+1. ALWAYS take a screenshot first to understand the current state
+2. Use semantic selectors (text content, ARIA labels) over CSS selectors
+3. Wait for page loads before interacting with elements
+4. If an action fails, take another screenshot to diagnose
+5. Prefer clicking visible buttons over executing JavaScript directly
+
+IMPORTANT SAFETY RULES:
+- Do NOT submit forms with sensitive data without explicit user confirmation
+- Do NOT accept cookies or privacy agreements without user knowledge
+- Do NOT make purchases or transactions of any kind
+- Do NOT login to accounts unless the user has explicitly provided credentials
+\`
+
+export const CHROME_TASK_PROMPT = \`
+Complete the following web task: {task}
+
+Current URL: {currentUrl}
+Current page title: {pageTitle}
+
+Take systematic steps. After each action, verify the result
+with a screenshot before proceeding.
+\``,
+        description: "Chrome 自动化提示强调截图优先、语义选择器、安全红线（不能自动提交表单、不能进行交易），防止浏览器自动化操作带来意外后果。",
+      },
+      {
+        title: "Swarm 多代理协作提示 — swarm/teammatePromptAddendum.ts",
+        language: "typescript",
+        code: `// utils/swarm/teammatePromptAddendum.ts
+// Swarm 框架中每个子代理的系统提示补充
+
+export const TEAMMATE_PROMPT_ADDENDUM = \`
+You are operating as part of a multi-agent swarm.
+You are one of several Claude instances working together.
+
+Your role: {agentRole}
+Your assigned task: {assignedTask}
+Team coordinator: {coordinatorId}
+
+COORDINATION RULES:
+1. Focus ONLY on your assigned task — do not drift
+2. Use SendMessage to communicate with teammates and coordinator
+3. Report blockers immediately rather than trying to work around them
+4. When done, report results back to the coordinator
+5. Do NOT duplicate work that another agent is handling
+
+CONFLICT AVOIDANCE:
+- You have been assigned specific files: {assignedFiles}
+- Do NOT modify files not in your assignment
+- If you need to read a file outside your scope, that is OK
+- Use worktree isolation if modifying overlapping files
+
+Current team status: {teamStatus}
+\``,
+        description: "Swarm 协作提示确保多个并行代理职责分明、不重复工作、及时汇报。assignedFiles 列表防止多个代理同时修改同一文件导致冲突。",
+      },
+      {
+        title: "技能提示模板 — skills/bundled/commit.ts",
+        language: "typescript",
+        code: `// skills/bundled/commit.ts — /commit 技能的提示词
+export const COMMIT_SKILL_PROMPT = \`
+Please create a git commit for the current changes.
+
+Steps:
+1. Run \\\`git status\\\` to see all changed files
+2. Run \\\`git diff\\\` to understand what changed
+3. Run \\\`git log --oneline -5\\\` to see recent commit style
+4. Stage appropriate files (prefer specific files over git add -A)
+5. Create commit with a message following the repo's style
+
+Commit message guidelines:
+- Lead with imperative verb (Add, Fix, Update, Remove)
+- Focus on WHY, not WHAT
+- Keep subject line under 72 characters
+- Never use --no-verify or skip hooks
+- Never force-push to main/master
+
+Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+\`
+
+// skills/bundled/simplify.ts — /simplify 技能的提示词
+export const SIMPLIFY_SKILL_PROMPT = \`
+Review the files changed in this session and simplify them.
+Look for:
+- Duplicate code that can be extracted into shared functions
+- Overly complex logic that can be simplified
+- Dead code or unused imports
+- Opportunities to use existing utilities instead of new ones
+
+Apply improvements directly. Explain key simplifications made.
+\``,
+        description: "技能提示词是精心设计的操作指南，encode 了最佳实践。/commit 技能甚至规定了'不能用 --no-verify'和'不能 force push'这样的安全约束。",
+      },
+    ],
+    flowSteps: [
+      { id: "request", label: "用户请求", description: "触发需要提示词的操作" },
+      { id: "select", label: "选择提示", description: "根据上下文选择对应提示词" },
+      { id: "inject", label: "动态注入", description: "注入环境变量、文件内容等" },
+      { id: "combine", label: "拼接构建", description: "多段提示词合并为完整提示" },
+      { id: "send", label: "发送模型", description: "作为 system/user 消息发送" },
+      { id: "parse", label: "解析输出", description: "提取结构化输出（XML标签等）" },
+    ],
+    flowConnections: [
+      { from: "request", to: "select" },
+      { from: "select", to: "inject" },
+      { from: "inject", to: "combine" },
+      { from: "combine", to: "send" },
+      { from: "send", to: "parse" },
+    ],
+    details: [
+      "Claude Code 的主系统提示并非一个静态字符串，而是由 14+ 个分段函数动态拼接而成。每个分段负责一个方面的行为规范（身份、工具使用、安全、输出效率等），运行时还会注入 MCP 配置、记忆文件、项目 CLAUDE.md 内容。",
+      "提示词工程的核心技巧之一是 XML 标签结构化输出。压缩提示用 <analysis>/<summary>，分类器用 <block>/<reason>，记忆提取用 <memory type='...'>。模型按标签格式输出，代码按标签解析——比 JSON 更鲁棒，因为不会因为单个字符错误导致解析失败。",
+      "YOLO 分类器的 Stage 1 提示故意设计得非常简短，限制模型输出最多 64 个 token。这不是偷懒，而是有意为之：简短提示让模型快速做出直觉判断，就像人类的'快思考'系统，减少过度分析带来的延迟。",
+      "记忆提取提示中明确列出了'不要保存什么'：代码模式、架构细节（可从代码推导）、临时任务细节。这个负面约束和正面约束同等重要——防止记忆系统被低价值信息淹没。",
+      "Chrome 自动化提示的安全红线（不提交表单、不进行交易）是用大写 IMPORTANT 标记的强约束，不是建议。这些红线保护用户免受浏览器自动化操作的意外后果，即使用户明确要求也不会执行。",
+      "Swarm 协作提示中的 assignedFiles 列表是防止多代理冲突的关键机制。每个代理被明确告知自己负责哪些文件，不应修改其他文件。即使代理在技术上有能力修改任何文件，提示词约束让它们'自觉'保持在各自的范围内。",
+      "技能提示词 encode 了 Anthropic 团队积累的最佳实践。/commit 技能不只是'帮我 commit'，它还规定了具体步骤（先看 log 了解风格）、安全约束（不用 --no-verify）、输出格式（添加 Co-Authored-By）——把专家知识固化为可重复的流程。",
+      "提示词版本管理是一个隐藏的挑战：prompt cache（1小时TTL）要求提示词字节完全一致才能命中缓存。修改提示词不只是改文案，可能导致 cache miss，增加延迟和成本。所以提示词修改需要仔细评估影响。",
+    ],
+    insights: [
+      {
+        title: "系统提示是动态拼图，不是静态文章",
+        analogy: "就像餐厅的菜单不是印死的，而是根据今天有什么食材、今天是什么节日、客人有什么忌口动态生成的",
+        explanation: "Claude Code 的系统提示在每次会话开始时实时构建：基础身份 + 工具规范 + 安全原则（固定部分）+ 当前环境信息 + 已连接的 MCP 服务器 + 用户记忆文件 + 项目 CLAUDE.md（动态部分）。固定部分命中 prompt cache，动态部分在末尾拼接，最大化缓存命中率。这个设计让系统提示既灵活又高效。",
+      },
+      {
+        title: "XML 标签比 JSON 更鲁棒",
+        analogy: "就像收快递时，写地址比画地图更可靠——即使字迹稍微潦草，也比画一张不完整的地图更容易识别",
+        explanation: "为什么 Claude Code 的结构化输出普遍用 XML 标签而不是 JSON？因为 LLM 生成 JSON 时偶尔会在字符串里漏掉引号或括号，导致整个 JSON 解析失败。XML 标签更宽容：即使标签内容有轻微格式问题，用正则表达式仍能提取出关键信息。<block>yes</block> 即使前后有多余空格也能被 .trim() 处理，而 JSON 的 {\"block\": \"yes\"} 少了一个引号就彻底报错。",
+      },
+      {
+        title: "负面约束和正面指令同等重要",
+        analogy: "就像交通规则不只告诉你'靠右行驶'，还要告诉你'不能闯红灯、不能逆行'——边界比方向更关键",
+        explanation: "记忆提取提示明确列出了'不要保存什么'——代码模式、架构细节、临时任务。这些负面约束防止记忆系统被低价值信息淹没（比如保存了'今天在 utils.ts 第 42 行写了一个函数'这种下次完全没用的信息）。同样，Chrome 自动化的安全红线、/commit 技能的禁止列表，都是用负面约束保护边界。好的提示词设计同时包含'要做什么'和'不要做什么'。",
+      },
+      {
+        title: "提示词改动有隐藏的性能成本",
+        analogy: "就像改了银行密码，之前存的所有自动填充都失效了，需要重新设置",
+        explanation: "Anthropic API 的 prompt cache 基于字节级完全匹配，1 小时 TTL。这意味着任何提示词修改——哪怕只改一个空格——都会使相关 cache 失效。对于主系统提示这样频繁使用的大提示词，cache miss 意味着每次请求多花几百毫秒和额外费用。所以提示词修改不只是文案编辑，需要评估对 cache 命中率的影响，批量修改比逐次小改更好。",
+      },
+    ],
+  },
 ];
 
 export function getChapterBySlug(slug: string): Chapter | undefined {

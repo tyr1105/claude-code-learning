@@ -5,14 +5,14 @@ import { usePathname } from "next/navigation";
 import { chapters } from "@/data/chapters";
 import {
   Layout, Wrench, Terminal, Shield, MessageSquare, Anchor,
-  Plug, Users, Database, Monitor, Sparkles, Star,
+  Plug, Users, Database, Monitor, Sparkles, Star, FileText,
   ChevronLeft, ChevronRight, Home, Check, Menu, X,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 
 const iconMap: Record<string, React.ElementType> = {
   Layout, Wrench, Terminal, Shield, MessageSquare, Anchor,
-  Plug, Users, Database, Monitor, Sparkles, Star,
+  Plug, Users, Database, Monitor, Sparkles, Star, FileText,
 };
 
 export default function Sidebar() {
@@ -70,28 +70,6 @@ export default function Sidebar() {
         <Home size={18} />
         {!collapsed && <span>架构总览</span>}
       </Link>
-
-      {/* Progress summary */}
-      {!collapsed && (
-        <div className="mx-4 mt-3 mb-1">
-          <div className="flex items-center justify-between text-xs" style={{ color: "var(--muted)" }}>
-            <span>学习进度</span>
-            <span>{visited.size}/{chapters.length}</span>
-          </div>
-          <div
-            className="mt-1 h-1 rounded-full overflow-hidden"
-            style={{ background: "var(--card-border)" }}
-          >
-            <div
-              className="h-full rounded-full transition-all duration-500"
-              style={{
-                width: `${(visited.size / chapters.length) * 100}%`,
-                background: "var(--accent)",
-              }}
-            />
-          </div>
-        </div>
-      )}
 
       {/* Chapters */}
       <nav className="flex-1 overflow-y-auto mt-2 px-2 pb-4">

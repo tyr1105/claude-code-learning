@@ -108,17 +108,18 @@ export function HomeArchitectureGraph() {
   const router = useRouter();
 
   const nodes: ArchNode[] = [
-    { id: "entry", label: "CLI Entry", description: "cli.js / main.tsx", x: 300, y: 0, color: "#3B82F6" },
-    { id: "tools", label: "工具系统", description: "42 个内置工具", x: 100, y: 150, color: "#EF4444" },
-    { id: "commands", label: "命令系统", description: "86 个命令", x: 300, y: 150, color: "#8B5CF6" },
-    { id: "permissions", label: "权限系统", description: "多层安全控制", x: 500, y: 150, color: "#10B981" },
-    { id: "messages", label: "消息系统", description: "对话与压缩", x: 0, y: 300, color: "#F59E0B" },
-    { id: "hooks", label: "Hook 系统", description: "生命周期钩子", x: 200, y: 300, color: "#6366F1" },
-    { id: "mcp", label: "MCP 集成", description: "外部工具协议", x: 400, y: 300, color: "#EC4899" },
-    { id: "agent", label: "Agent 系统", description: "多代理协调", x: 600, y: 300, color: "#8B5CF6" },
-    { id: "state", label: "状态管理", description: "AppState", x: 100, y: 450, color: "#14B8A6" },
-    { id: "bridge", label: "Bridge/IDE", description: "IDE 集成", x: 300, y: 450, color: "#0EA5E9" },
-    { id: "skills", label: "技能系统", description: "Slash 命令扩展", x: 500, y: 450, color: "#D946EF" },
+    { id: "entry", label: "CLI Entry", description: "cli.js / main.tsx", x: 300, y: 0, color: "#D97757" },
+    { id: "tools", label: "工具系统", description: "42 个内置工具", x: 100, y: 150, color: "#C2785C" },
+    { id: "commands", label: "命令系统", description: "86 个命令", x: 300, y: 150, color: "#B8860B" },
+    { id: "permissions", label: "权限系统", description: "多层安全控制", x: 500, y: 150, color: "#8B7355" },
+    { id: "messages", label: "消息系统", description: "对话与压缩", x: 0, y: 300, color: "#EDA100" },
+    { id: "hooks", label: "Hook 系统", description: "生命周期钩子", x: 200, y: 300, color: "#A0522D" },
+    { id: "mcp", label: "MCP 集成", description: "外部工具协议", x: 400, y: 300, color: "#D97757" },
+    { id: "agent", label: "Agent 系统", description: "多代理协调", x: 600, y: 300, color: "#C2785C" },
+    { id: "state", label: "状态管理", description: "AppState", x: 100, y: 450, color: "#B8860B" },
+    { id: "bridge", label: "Bridge/IDE", description: "IDE 集成", x: 300, y: 450, color: "#8B7355" },
+    { id: "skills", label: "技能系统", description: "Slash 命令扩展", x: 500, y: 450, color: "#EDA100" },
+    { id: "prompts", label: "提示词系统", description: "60+ 提示词定义", x: 300, y: 600, color: "#D97757" },
   ];
 
   const edges: ArchEdge[] = [
@@ -133,6 +134,8 @@ export function HomeArchitectureGraph() {
     { source: "hooks", target: "bridge" },
     { source: "mcp", target: "skills" },
     { source: "agent", target: "state" },
+    { source: "skills", target: "prompts", label: "调用" },
+    { source: "messages", target: "prompts", label: "压缩" },
   ];
 
   const slugMap: Record<string, string> = {
@@ -147,6 +150,7 @@ export function HomeArchitectureGraph() {
     state: "state",
     bridge: "bridge",
     skills: "skills",
+    prompts: "prompts",
   };
 
   return (
