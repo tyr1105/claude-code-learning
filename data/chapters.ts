@@ -1883,11 +1883,11 @@ try {
     overview:
       "Claude Code 源码中包含 96+ 个精心设计的提示词，分布在 7 大类别：系统提示、36 个工具提示、服务层提示、技能提示、特殊功能提示。每类提示词都有不同的设计目标和工程约束，共同驱动 Claude Code 的智能行为。本章按类别完整收录所有提示词原文及深度解析。",
     keyPoints: [
-      "【系统提示】constants/prompts.ts — 14+ 分段动态构建的主提示",
-      "【工具提示】tools/*/prompt.ts — 36 个工具各自的描述与约束（BashTool/FileEditTool/FileReadTool/FileWriteTool/GlobTool/GrepTool/AgentTool/AskUserQuestionTool/EnterPlanModeTool/ExitPlanModeTool/EnterWorktreeTool/ExitWorktreeTool/SkillTool/TaskCreate~Stop/TeamCreate~Delete/SendMessageTool/TodoWriteTool/ToolSearchTool/WebSearchTool/WebFetchTool/BriefTool/ConfigTool/LSPTool/NotebookEditTool/PowerShellTool/ListMcpResources/ReadMcpResource/RemoteTriggerTool/ScheduleCronTool/SleepTool）",
-      "【服务提示】compact/prompt.ts 压缩、extractMemories/prompts.ts 记忆提取、MagicDocs 文档维护、SessionMemory 会话记忆、autoDream 记忆整合",
-      "【技能提示】skills/bundled/ — /simplify /batch /remember /skillify /loop /stuck /debug /claude-api /claude-in-chrome /update-config /schedule /keybindings-help /lorem-ipsum",
-      "【特殊功能】buddy/prompt.ts 伴侣角色、utils/claudeInChrome 浏览器自动化、utils/swarm/teammatePromptAddendum 多代理通信",
+      "系统提示 — constants/prompts.ts，14+ 个分段函数动态拼接，固定部分命中 prompt cache",
+      "工具提示 — tools/*/prompt.ts，36 个工具各自的行为约束（BashTool / FileEditTool / AgentTool / TaskCreate 等）",
+      "服务层提示 — compact（压缩）、extractMemories（记忆提取）、MagicDocs、SessionMemory、autoDream",
+      "技能提示 — /simplify /batch /remember /skillify /loop /debug /claude-api /schedule 等 13 个技能",
+      "特殊功能提示 — Buddy 伴侣角色、Chrome 浏览器自动化、Swarm Teammate 通信协议",
     ],
     archNodes: [
       { id: "system", label: "系统提示", description: "constants/prompts.ts", x: 250, y: 0, color: "#D97757" },
