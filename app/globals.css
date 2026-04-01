@@ -37,9 +37,119 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-sans, system-ui, sans-serif);
+  transition: background 0.3s ease, color 0.3s ease;
 }
 
-/* Scrollbar */
+/* ============================================
+   Animations
+   ============================================ */
+
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideInRight {
+  from { opacity: 0; transform: translateX(20px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes pulse-line {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
+
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(16px) scale(0.95); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes toast-out {
+  from { opacity: 1; transform: translateY(0) scale(1); }
+  to { opacity: 0; transform: translateY(16px) scale(0.95); }
+}
+
+.animate-in {
+  animation: fadeInUp 0.5s ease-out both;
+}
+
+.animate-fade {
+  animation: fadeIn 0.4s ease-out both;
+}
+
+.animate-slide-right {
+  animation: slideInRight 0.5s ease-out both;
+}
+
+/* ============================================
+   Micro-interactions
+   ============================================ */
+
+button:active {
+  transform: scale(0.97);
+}
+
+.link-animated {
+  position: relative;
+}
+.link-animated::after {
+  content: '';
+  position: absolute;
+  bottom: -1px;
+  left: 0;
+  width: 0;
+  height: 1.5px;
+  background: var(--accent);
+  transition: width 0.3s ease;
+}
+.link-animated:hover::after {
+  width: 100%;
+}
+
+/* Reading progress bar */
+.reading-progress {
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--accent), #a855f7);
+  z-index: 100;
+  transition: width 0.1s linear;
+}
+
+/* Toast */
+.toast-container {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 200;
+}
+.toast {
+  animation: toast-in 0.3s ease-out both;
+  backdrop-filter: blur(8px);
+}
+.toast-exit {
+  animation: toast-out 0.3s ease-in both;
+}
+
+/* Grid expand for smooth open/close */
+.grid-expand {
+  display: grid;
+  transition: grid-template-rows 0.3s ease;
+}
+.grid-expand > div {
+  overflow: hidden;
+}
+
+/* ============================================
+   Scrollbar
+   ============================================ */
+
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -52,7 +162,10 @@ body {
   border-radius: 3px;
 }
 
-/* ReactFlow overrides */
+/* ============================================
+   ReactFlow overrides
+   ============================================ */
+
 .react-flow__node {
   cursor: pointer;
 }
@@ -65,4 +178,37 @@ body {
 }
 .react-flow__panel {
   z-index: 1 !important;
+}
+
+/* ============================================
+   Mobile responsive
+   ============================================ */
+
+@media (max-width: 768px) {
+  .sidebar-desktop {
+    transform: translateX(-100%);
+    transition: transform 0.3s ease;
+  }
+  .sidebar-desktop.sidebar-open {
+    transform: translateX(0);
+  }
+  .sidebar-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 40;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s ease;
+  }
+  .sidebar-overlay.sidebar-open {
+    opacity: 1;
+    pointer-events: auto;
+  }
+  .main-content {
+    margin-left: 0 !important;
+  }
+  .hamburger-btn {
+    display: flex !important;
+  }
 }

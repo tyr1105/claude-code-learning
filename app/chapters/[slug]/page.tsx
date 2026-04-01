@@ -6,24 +6,14 @@ import { getChapterBySlug, chapters } from "@/data/chapters";
 import FileTree from "@/components/FileTree";
 import FlowDiagram from "@/components/FlowDiagram";
 import InsightCard from "@/components/InsightCard";
+import TableOfContents from "@/components/TableOfContents";
 import Link from "next/link";
 import {
-  Layout,
-  Wrench,
-  Terminal,
-  Shield,
-  MessageSquare,
-  Anchor,
-  Plug,
-  Users,
-  Database,
-  Monitor,
-  Sparkles,
-  Star,
-  ArrowLeft,
-  ArrowRight,
-  CheckCircle2,
+  Layout, Wrench, Terminal, Shield, MessageSquare, Anchor,
+  Plug, Users, Database, Monitor, Sparkles, Star,
+  ArrowLeft, ArrowRight, CheckCircle2,
 } from "lucide-react";
+import { useMemo } from "react";
 
 const ArchitectureGraph = dynamic(() => import("@/components/ArchitectureGraph"), {
   ssr: false,
@@ -32,7 +22,10 @@ const ArchitectureGraph = dynamic(() => import("@/components/ArchitectureGraph")
       className="rounded-xl flex items-center justify-center"
       style={{ height: 500, background: "var(--card-bg)", border: "1px solid var(--card-border)" }}
     >
-      <span style={{ color: "var(--muted)" }}>加载架构图...</span>
+      <div className="flex flex-col items-center gap-2">
+        <div className="w-8 h-8 rounded-full border-2 border-t-transparent animate-spin" style={{ borderColor: "var(--accent)", borderTopColor: "transparent" }} />
+        <span style={{ color: "var(--muted)" }} className="text-sm">加载架构图...</span>
+      </div>
     </div>
   ),
 });
@@ -44,7 +37,7 @@ const CodeBlock = dynamic(() => import("@/components/CodeBlock"), {
       className="rounded-xl h-40 flex items-center justify-center"
       style={{ background: "var(--card-bg)", border: "1px solid var(--card-border)" }}
     >
-      <span style={{ color: "var(--muted)" }}>加载代码...</span>
+      <span style={{ color: "var(--muted)" }} className="text-sm">加载代码...</span>
     </div>
   ),
 });
@@ -58,6 +51,20 @@ export default function ChapterPage() {
   const params = useParams();
   const slug = params.slug as string;
   const chapter = getChapterBySlug(slug);
+
+  const tocItems = useMemo(() => {
+    if (!chapter) return [];
+    const items: { id: string; label: string }[] = [];
+    items.push({ id: "sec-overview", label: "概述" });
+    items.push({ id: "sec-keypoints", label: "核心要点" });
+    if (chapter.insights && chapter.insights.length > 0) items.push({ id: "sec-insights", label: "设计亮点" });
+    if (chapter.archNodes.length > 0) items.push({ id: "sec-arch", label: "架构图" });
+    if (chapter.coreFiles.length > 0) items.push({ id: "sec-files", label: "核心文件" });
+    if (chapter.flowSteps.length > 0) items.push({ id: "sec-flow", label: "数据流程" });
+    if (chapter.codeSnippets.length > 0) items.push({ id: "sec-code", label: "关键代码" });
+    if (chapter.details.length > 0) items.push({ id: "sec-details", label: "深入解析" });
+    return items;
+  }, [chapter]);
 
   if (!chapter) {
     return (
@@ -77,9 +84,11 @@ export default function ChapterPage() {
 
   return (
     <div className="max-w-4xl mx-auto px-6 py-8">
+      <TableOfContents items={tocItems} />
+
       {/* Breadcrumb */}
-      <div className="flex items-center gap-2 text-sm mb-6" style={{ color: "var(--muted)" }}>
-        <Link href="/" className="hover:underline">
+      <div className="flex items-center gap-2 text-sm mb-6 animate-in" style={{ color: "var(--muted)" }}>
+        <Link href="/" className="link-animated hover:text-[var(--accent)]">
           首页
         </Link>
         <span>/</span>
@@ -87,7 +96,7 @@ export default function ChapterPage() {
       </div>
 
       {/* Header */}
-      <div className="flex items-start gap-4 mb-8">
+      <div className="flex items-start gap-4 mb-8 animate-in" style={{ animationDelay: "0.05s" }}>
         <div
           className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0"
           style={{ background: chapter.color + "15" }}
@@ -104,14 +113,15 @@ export default function ChapterPage() {
 
       {/* Overview */}
       <div
-        className="rounded-xl p-5 mb-6"
-        style={{ background: chapter.color + "08", border: `1px solid ${chapter.color}30` }}
+        id="sec-overview"
+        className="rounded-xl p-5 mb-6 animate-in"
+        style={{ background: chapter.color + "08", border: `1px solid ${chapter.color}30`, animationDelay: "0.1s" }}
       >
         <p className="text-sm leading-relaxed">{chapter.overview}</p>
       </div>
 
       {/* Key Points */}
-      <div className="mb-8">
+      <div id="sec-keypoints" className="mb-8 animate-in" style={{ animationDelay: "0.15s" }}>
         <h2 className="text-lg font-semibold mb-3">核心要点</h2>
         <div className="space-y-2">
           {chapter.keyPoints.map((p, i) => (
@@ -125,7 +135,7 @@ export default function ChapterPage() {
 
       {/* Design Insights */}
       {chapter.insights && chapter.insights.length > 0 && (
-        <div className="mb-8">
+        <div id="sec-insights" className="mb-8 animate-in" style={{ animationDelay: "0.2s" }}>
           <h2 className="text-lg font-semibold mb-3">设计亮点</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {chapter.insights.map((insight, i) => (
@@ -137,7 +147,7 @@ export default function ChapterPage() {
 
       {/* Architecture Graph */}
       {chapter.archNodes.length > 0 && (
-        <div className="mb-8">
+        <div id="sec-arch" className="mb-8 animate-in" style={{ animationDelay: "0.25s" }}>
           <h2 className="text-lg font-semibold mb-3">模块架构图</h2>
           <ArchitectureGraph nodes={chapter.archNodes} edges={chapter.archEdges} />
         </div>
@@ -145,21 +155,21 @@ export default function ChapterPage() {
 
       {/* Core Files */}
       {chapter.coreFiles.length > 0 && (
-        <div className="mb-8">
+        <div id="sec-files" className="mb-8 animate-in" style={{ animationDelay: "0.3s" }}>
           <FileTree files={chapter.coreFiles} />
         </div>
       )}
 
       {/* Flow Diagram */}
       {chapter.flowSteps.length > 0 && (
-        <div className="mb-8">
+        <div id="sec-flow" className="mb-8 animate-in" style={{ animationDelay: "0.35s" }}>
           <FlowDiagram steps={chapter.flowSteps} connections={chapter.flowConnections} />
         </div>
       )}
 
       {/* Code Snippets */}
       {chapter.codeSnippets.length > 0 && (
-        <div className="mb-8">
+        <div id="sec-code" className="mb-8 animate-in" style={{ animationDelay: "0.4s" }}>
           <h2 className="text-lg font-semibold mb-3">关键代码</h2>
           <div className="space-y-4">
             {chapter.codeSnippets.map((s, i) => (
@@ -177,7 +187,7 @@ export default function ChapterPage() {
 
       {/* Details */}
       {chapter.details.length > 0 && (
-        <div className="mb-8">
+        <div id="sec-details" className="mb-8 animate-in" style={{ animationDelay: "0.45s" }}>
           <h2 className="text-lg font-semibold mb-3">深入解析</h2>
           <div className="space-y-3">
             {chapter.details.map((d, i) => (
@@ -189,19 +199,27 @@ export default function ChapterPage() {
         </div>
       )}
 
-      {/* Navigation */}
+      {/* Navigation Cards */}
       <div
-        className="flex items-center justify-between py-6 mt-8"
-        style={{ borderTop: "1px solid var(--card-border)" }}
+        className="grid grid-cols-1 md:grid-cols-2 gap-3 py-6 mt-8 animate-in"
+        style={{ borderTop: "1px solid var(--card-border)", animationDelay: "0.5s" }}
       >
         {prevChapter ? (
           <Link
             href={`/chapters/${prevChapter.slug}`}
-            className="flex items-center gap-2 text-sm hover:underline"
-            style={{ color: "var(--accent)" }}
+            className="group rounded-xl p-4 transition-all duration-200 hover:shadow-md hover:-translate-y-0.5"
+            style={{ background: "var(--card-bg)", border: "1px solid var(--card-border)" }}
           >
-            <ArrowLeft size={16} />
-            {prevChapter.title}
+            <div className="text-xs mb-1" style={{ color: "var(--muted)" }}>
+              <ArrowLeft size={12} className="inline mr-1" />
+              上一章
+            </div>
+            <div className="text-sm font-semibold group-hover:text-[var(--accent)] transition-colors">
+              {prevChapter.title}
+            </div>
+            <div className="text-xs mt-0.5" style={{ color: "var(--muted)" }}>
+              {prevChapter.subtitle}
+            </div>
           </Link>
         ) : (
           <div />
@@ -209,20 +227,36 @@ export default function ChapterPage() {
         {nextChapter ? (
           <Link
             href={`/chapters/${nextChapter.slug}`}
-            className="flex items-center gap-2 text-sm hover:underline"
-            style={{ color: "var(--accent)" }}
+            className="group rounded-xl p-4 text-right transition-all duration-200 hover:shadow-md hover:-translate-y-0.5"
+            style={{ background: "var(--card-bg)", border: "1px solid var(--card-border)" }}
           >
-            {nextChapter.title}
-            <ArrowRight size={16} />
+            <div className="text-xs mb-1" style={{ color: "var(--muted)" }}>
+              下一章
+              <ArrowRight size={12} className="inline ml-1" />
+            </div>
+            <div className="text-sm font-semibold group-hover:text-[var(--accent)] transition-colors">
+              {nextChapter.title}
+            </div>
+            <div className="text-xs mt-0.5" style={{ color: "var(--muted)" }}>
+              {nextChapter.subtitle}
+            </div>
           </Link>
         ) : (
           <Link
             href="/"
-            className="flex items-center gap-2 text-sm hover:underline"
-            style={{ color: "var(--accent)" }}
+            className="group rounded-xl p-4 text-right transition-all duration-200 hover:shadow-md hover:-translate-y-0.5"
+            style={{ background: "var(--card-bg)", border: "1px solid var(--card-border)" }}
           >
-            返回首页
-            <ArrowRight size={16} />
+            <div className="text-xs mb-1" style={{ color: "var(--muted)" }}>
+              完成
+              <ArrowRight size={12} className="inline ml-1" />
+            </div>
+            <div className="text-sm font-semibold group-hover:text-[var(--accent)] transition-colors">
+              返回首页
+            </div>
+            <div className="text-xs mt-0.5" style={{ color: "var(--muted)" }}>
+              回到架构总览
+            </div>
           </Link>
         )}
       </div>
