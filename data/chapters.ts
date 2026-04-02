@@ -1733,17 +1733,18 @@ loadedPaths.add(realPath)`,
   {
     slug: "special",
     title: "特色功能",
-    subtitle: "Buddy 宠物、Vim 模式、语音交互与反蒸馏",
+    subtitle: "Buddy 宠物、Vim 模式、语音交互、UltraPlan 深度规划与反蒸馏",
     icon: "Star",
     color: "#F59E0B",
     overview:
-      "Claude Code 包含多个有趣和独特的功能：Buddy 虚拟宠物系统、完整的 Vim 键绑定支持、语音交互模式，以及防止模型输出被用于蒸馏的保护措施。",
+      "Claude Code 包含多个有趣和独特的功能：Buddy 虚拟宠物系统、完整的 Vim 键绑定支持、语音交互模式、UltraPlan 远程深度规划（基于 CCR 云容器），以及防止模型输出被用于蒸馏的保护措施。UltraPlan 是 Anthropic 内部专属的高级规划功能，通过 Teleport 将本地环境传送到云端 CCR，使用 Opus 模型进行多代理探索，用户在浏览器中审批计划后可选择远程执行或传回本地。",
     keyPoints: [
       "Buddy — 18 种物种的 Tamagotchi 宠物系统（1% 传奇，0.01% 闪光传奇）",
       "Vim 模式 — 完整 Vim 键绑定支持",
       "语音交互 — 语音输入和转录",
       "反蒸馏 — 输出样式剥离、undercover 模式",
       "Cron 调度 — 定时任务系统",
+      "UltraPlan — CCR 远程深度规划，Opus 模型 + 多代理探索 + 浏览器审批",
     ],
     archNodes: [
       { id: "buddy", label: "Buddy 宠物", description: "18 种物种 / 哈希选定", x: 100, y: 0, color: "#F59E0B" },
@@ -1752,17 +1753,30 @@ loadedPaths.add(realPath)`,
       { id: "anti", label: "反蒸馏保护", description: "物种名字符编码隐藏", x: 60, y: 200, color: "#EF4444" },
       { id: "cron", label: "Cron 调度器", description: "文件锁防并发", x: 320, y: 200, color: "#8B5CF6" },
       { id: "ultra", label: "UltraPlan", description: "深度规划模式", x: 580, y: 200, color: "#EC4899" },
+      { id: "teleport", label: "Teleport", description: "远程会话协调器", x: 680, y: 80, color: "#EC4899" },
+      { id: "ccr", label: "CCR 会话", description: "云端 Opus + plan 模式", x: 760, y: 200, color: "#F43F5E" },
+      { id: "keyword", label: "关键词检测", description: "9 种配对符号排除", x: 520, y: 80, color: "#EC4899" },
+      { id: "poller", label: "轮询扫描器", description: "ExitPlanModeScanner", x: 900, y: 200, color: "#F43F5E" },
       { id: "keybind", label: "键绑定系统", description: "~/.claude/keybindings.json", x: 180, y: 380, color: "#6366F1" },
       { id: "lorem", label: "Lorem Ipsum", description: "精确 token 压测工具", x: 460, y: 380, color: "#F97316" },
     ],
-    archEdges: [],
+    archEdges: [
+      { source: "ultra", target: "teleport", label: "传送" },
+      { source: "teleport", target: "ccr", label: "创建会话" },
+      { source: "ccr", target: "poller", label: "事件流" },
+      { source: "keyword", target: "ultra", label: "触发" },
+    ],
     coreFiles: [
       { path: "utils/buddy/", lines: 800, description: "Buddy 宠物系统（18 种物种，ASCII 艺术）" },
       { path: "utils/vim/", lines: 600, description: "Vim 键绑定实现" },
       { path: "services/voice.ts", lines: 400, description: "语音交互服务" },
       { path: "utils/undercover.ts", lines: 200, description: "反蒸馏保护" },
       { path: "utils/cronScheduler.ts", lines: 700, description: "Cron 调度器" },
-      { path: "commands/ultraplan.tsx", lines: 500, description: "UltraPlan UI" },
+      { path: "commands/ultraplan.tsx", lines: 470, description: "UltraPlan 命令入口 + launchUltraplan" },
+      { path: "utils/ultraplan/ccrSession.ts", lines: 349, description: "CCR 轮询 + ExitPlanModeScanner 状态机" },
+      { path: "utils/ultraplan/keyword.ts", lines: 127, description: "智能关键词检测（9 种配对排除）" },
+      { path: "utils/teleport.tsx", lines: 1191, description: "Teleport 远程会话协调器" },
+      { path: "utils/teleport/gitBundle.ts", lines: 293, description: "Git 三层回退打包传输" },
     ],
     codeSnippets: [
       {
@@ -1818,17 +1832,584 @@ function onUserInteraction(buddy: Buddy) {
 // 或内部工具的实现细节`,
         description: "反蒸馏措施保护 Claude Code 的实现细节不被用于训练竞争模型。",
       },
+      {
+        title: "UltraPlan: launchUltraplan 入口",
+        language: "typescript",
+        code: `// commands/ultraplan.tsx — Three entry points share this function
+// 1. Slash command: /ultraplan <prompt>
+// 2. Keyword trigger: user types "ultraplan" in prompt
+// 3. Plan dialog: user clicks "Ultraplan" in ExitPlanMode UI
+
+export async function launchUltraplan(opts: {
+  blurb: string          // user's planning request
+  seedPlan?: string      // draft plan from plan dialog
+  getAppState: () => AppState
+  setAppState: (f: (prev: AppState) => AppState) => void
+  signal: AbortSignal
+  disconnectedBridge?: boolean
+  onSessionReady?: (msg: string) => void
+}): Promise<string> {
+  const { blurb, seedPlan, getAppState, setAppState, signal,
+          disconnectedBridge, onSessionReady } = opts
+
+  // Guard: prevent duplicate launches during teleportToRemote
+  const { ultraplanSessionUrl: active, ultraplanLaunching } = getAppState()
+  if (active || ultraplanLaunching) {
+    return buildAlreadyActiveMessage(active)
+  }
+
+  if (!blurb && !seedPlan) {
+    // Bare /ultraplan — show usage, no dialog
+    return [
+      'Usage: /ultraplan \\<prompt\\>, or include "ultraplan" anywhere',
+      'in your prompt', '',
+      'Advanced multi-agent plan mode with our most powerful model',
+      '(Opus). Runs in Claude Code on the web.', '',
+      \`Terms: \${CCR_TERMS_URL}\`
+    ].join('\\n')
+  }
+
+  // Set synchronously before detached flow to prevent races
+  setAppState(prev => prev.ultraplanLaunching ? prev : {
+    ...prev, ultraplanLaunching: true
+  })
+  void launchDetached({ blurb, seedPlan, getAppState,
+    setAppState, signal, onSessionReady })
+  return buildLaunchMessage(disconnectedBridge)
+}`,
+        codeZh: `// commands/ultraplan.tsx — 三个入口共享此函数
+// 1. Slash 命令：/ultraplan <提示词>
+// 2. 关键词触发：用户在 prompt 中输入 "ultraplan"
+// 3. 计划对话框：用户在 ExitPlanMode UI 中点击 "Ultraplan"
+
+export async function launchUltraplan(opts: {
+  blurb: string          // 用户的规划请求
+  seedPlan?: string      // 来自计划对话框的草稿
+  getAppState: () => AppState
+  setAppState: (f: (prev: AppState) => AppState) => void
+  signal: AbortSignal
+  disconnectedBridge?: boolean
+  onSessionReady?: (msg: string) => void
+}): Promise<string> {
+  const { blurb, seedPlan, getAppState, setAppState, signal,
+          disconnectedBridge, onSessionReady } = opts
+
+  // 防护：在 teleportToRemote 期间防止重复启动
+  const { ultraplanSessionUrl: active, ultraplanLaunching } = getAppState()
+  if (active || ultraplanLaunching) {
+    return buildAlreadyActiveMessage(active)
+  }
+
+  if (!blurb && !seedPlan) {
+    // 裸 /ultraplan — 显示用法，不弹对话框
+    return [
+      '用法：/ultraplan \\<提示词\\>，或在提示词中包含 "ultraplan"',
+      '', '',
+      '高级多代理规划模式，使用最强模型',
+      '（Opus）。在 Claude Code 网页端运行。', '',
+      \`条款：\${CCR_TERMS_URL}\`
+    ].join('\\n')
+  }
+
+  // 在分离流程前同步设置，防止竞态条件
+  setAppState(prev => prev.ultraplanLaunching ? prev : {
+    ...prev, ultraplanLaunching: true
+  })
+  void launchDetached({ blurb, seedPlan, getAppState,
+    setAppState, signal, onSessionReady })
+  return buildLaunchMessage(disconnectedBridge)
+}`,
+        description: "launchUltraplan 是三个入口（slash 命令、关键词触发、对话框按钮）的共享函数。通过 ultraplanLaunching 锁防止竞态启动。",
+      },
+      {
+        title: "UltraPlan: launchDetached 异步流",
+        language: "typescript",
+        code: `// commands/ultraplan.tsx — Detached async flow
+// Error-path owns archive; success-path defers to dialog/poll
+
+async function launchDetached(opts: { ... }): Promise<void> {
+  let sessionId: string | undefined  // hoisted for catch block
+  try {
+    const model = getUltraplanModel()  // Opus from GrowthBook
+
+    // 1. Check eligibility (login, feature flags, etc.)
+    const eligibility = await checkRemoteAgentEligibility()
+    if (!eligibility.eligible) {
+      enqueuePendingNotification({ value: reasons, mode: 'task-notification' })
+      return
+    }
+
+    // 2. Build prompt (seedPlan + instructions + blurb)
+    const prompt = buildUltraplanPrompt(blurb, seedPlan)
+
+    // 3. Teleport to remote CCR session
+    const session = await teleportToRemote({
+      initialMessage: prompt,
+      description: blurb || 'Refine local plan',
+      model,
+      permissionMode: 'plan',   // remote runs in plan-only mode
+      ultraplan: true,
+      signal,
+      useDefaultEnvironment: true,
+    })
+
+    sessionId = session.id
+    const url = getRemoteSessionUrl(session.id, process.env.SESSION_INGRESS_URL)
+
+    // 4. Register as background task (shows pill in UI)
+    const { taskId } = registerRemoteAgentTask({
+      remoteTaskType: 'ultraplan',
+      session: { id: session.id, title: blurb || 'Ultraplan' },
+      isUltraplan: true,
+    })
+
+    // 5. Start detached polling (3s interval, 30min timeout)
+    startDetachedPoll(taskId, session.id, url, getAppState, setAppState)
+  } catch (e) {
+    if (sessionId) {
+      // Archive orphaned session to prevent 30min zombie
+      void archiveRemoteSession(sessionId).catch(...)
+    }
+  } finally {
+    setAppState(prev => prev.ultraplanLaunching ? {
+      ...prev, ultraplanLaunching: undefined
+    } : prev)
+  }
+}`,
+        codeZh: `// commands/ultraplan.tsx — 分离式异步流程
+// 错误路径负责归档；成功路径延迟到对话框/轮询
+
+async function launchDetached(opts: { ... }): Promise<void> {
+  let sessionId: string | undefined  // 提升到 catch 块可访问
+  try {
+    const model = getUltraplanModel()  // 从 GrowthBook 获取 Opus 模型
+
+    // 1. 检查资格（登录、功能开关等）
+    const eligibility = await checkRemoteAgentEligibility()
+    if (!eligibility.eligible) {
+      enqueuePendingNotification({ value: 原因, mode: 'task-notification' })
+      return
+    }
+
+    // 2. 构建提示词（seedPlan + 指令 + blurb）
+    const prompt = buildUltraplanPrompt(blurb, seedPlan)
+
+    // 3. 传送到远程 CCR 会话
+    const session = await teleportToRemote({
+      initialMessage: prompt,
+      description: blurb || '优化本地计划',
+      model,
+      permissionMode: 'plan',   // 远程以只规划模式运行
+      ultraplan: true,
+      signal,
+      useDefaultEnvironment: true,
+    })
+
+    sessionId = session.id
+    const url = getRemoteSessionUrl(session.id, process.env.SESSION_INGRESS_URL)
+
+    // 4. 注册为后台任务（UI 中显示药丸指示器）
+    const { taskId } = registerRemoteAgentTask({
+      remoteTaskType: 'ultraplan',
+      session: { id: session.id, title: blurb || 'Ultraplan' },
+      isUltraplan: true,
+    })
+
+    // 5. 启动分离式轮询（3 秒间隔，30 分钟超时）
+    startDetachedPoll(taskId, session.id, url, getAppState, setAppState)
+  } catch (e) {
+    if (sessionId) {
+      // 归档孤立会话，防止 30 分钟僵尸进程
+      void archiveRemoteSession(sessionId).catch(...)
+    }
+  } finally {
+    setAppState(prev => prev.ultraplanLaunching ? {
+      ...prev, ultraplanLaunching: undefined
+    } : prev)
+  }
+}`,
+        description: "launchDetached 是核心异步流：资格检查 → 提示词构建 → teleportToRemote → 后台任务注册 → 轮询。失败时自动归档远程会话防止僵尸进程。",
+      },
+      {
+        title: "UltraPlan: ExitPlanModeScanner 状态机",
+        language: "typescript",
+        code: `// utils/ultraplan/ccrSession.ts — Pure stateful classifier
+// No I/O, no timers — feed it events for unit tests & offline replay
+
+export type ScanResult =
+  | { kind: 'approved'; plan: string }     // user approved in browser
+  | { kind: 'teleport'; plan: string }     // user chose "execute locally"
+  | { kind: 'rejected'; id: string }       // user rejected, iterate
+  | { kind: 'pending' }                    // dialog showing, waiting
+  | { kind: 'terminated'; subtype: string }// remote crashed / max turns
+  | { kind: 'unchanged' }                  // no new events
+
+export class ExitPlanModeScanner {
+  private exitPlanCalls: string[] = []
+  private results = new Map<string, ToolResultBlockParam>()
+  private rejectedIds = new Set<string>()
+  private terminated: { subtype: string } | null = null
+
+  get hasPendingPlan(): boolean {
+    const id = this.exitPlanCalls.findLast(c => !this.rejectedIds.has(c))
+    return id !== undefined && !this.results.has(id)
+  }
+
+  ingest(newEvents: SDKMessage[]): ScanResult {
+    for (const m of newEvents) {
+      if (m.type === 'assistant') {
+        // Track ExitPlanMode tool_use calls
+        for (const block of m.message.content) {
+          if (block.name === 'exit_plan_mode_v2')
+            this.exitPlanCalls.push(block.id)
+        }
+      } else if (m.type === 'user') {
+        // Track tool_results (approve/reject)
+        for (const block of m.message.content)
+          if (block.type === 'tool_result')
+            this.results.set(block.tool_use_id, block)
+      } else if (m.type === 'result' && m.subtype !== 'success') {
+        // Only error subtypes mean session is dead
+        this.terminated = { subtype: m.subtype }
+      }
+    }
+
+    // Precedence: approved > terminated > rejected > pending > unchanged
+    // Scan from newest to find the latest non-rejected ExitPlanMode
+    for (let i = this.exitPlanCalls.length - 1; i >= 0; i--) {
+      const id = this.exitPlanCalls[i]!
+      if (this.rejectedIds.has(id)) continue
+      const tr = this.results.get(id)
+      if (!tr) return { kind: 'pending' }
+      if (tr.is_error === true) {
+        const teleportPlan = extractTeleportPlan(tr.content)
+        return teleportPlan !== null
+          ? { kind: 'teleport', plan: teleportPlan }
+          : { kind: 'rejected', id }
+      }
+      return { kind: 'approved', plan: extractApprovedPlan(tr.content) }
+    }
+    return { kind: 'unchanged' }
+  }
+}`,
+        codeZh: `// utils/ultraplan/ccrSession.ts — 纯函数状态分类器
+// 无 I/O、无定时器 — 传入事件即可用于单元测试和离线回放
+
+export type ScanResult =
+  | { kind: 'approved'; plan: string }     // 用户在浏览器中批准
+  | { kind: 'teleport'; plan: string }     // 用户选择"本地执行"
+  | { kind: 'rejected'; id: string }       // 用户拒绝，继续迭代
+  | { kind: 'pending' }                    // 对话框展示中，等待操作
+  | { kind: 'terminated'; subtype: string }// 远程崩溃 / 达到最大轮次
+  | { kind: 'unchanged' }                  // 无新事件
+
+export class ExitPlanModeScanner {
+  private exitPlanCalls: string[] = []
+  private results = new Map<string, ToolResultBlockParam>()
+  private rejectedIds = new Set<string>()
+  private terminated: { subtype: string } | null = null
+
+  get hasPendingPlan(): boolean {
+    const id = this.exitPlanCalls.findLast(c => !this.rejectedIds.has(c))
+    return id !== undefined && !this.results.has(id)
+  }
+
+  ingest(newEvents: SDKMessage[]): ScanResult {
+    for (const m of newEvents) {
+      if (m.type === 'assistant') {
+        // 追踪 ExitPlanMode tool_use 调用
+        for (const block of m.message.content) {
+          if (block.name === 'exit_plan_mode_v2')
+            this.exitPlanCalls.push(block.id)
+        }
+      } else if (m.type === 'user') {
+        // 追踪 tool_result（批准/拒绝）
+        for (const block of m.message.content)
+          if (block.type === 'tool_result')
+            this.results.set(block.tool_use_id, block)
+      } else if (m.type === 'result' && m.subtype !== 'success') {
+        // 只有错误子类型意味着会话已终止
+        this.terminated = { subtype: m.subtype }
+      }
+    }
+
+    // 优先级：approved > terminated > rejected > pending > unchanged
+    // 从最新到最旧扫描，找到最近的未拒绝 ExitPlanMode
+    for (let i = this.exitPlanCalls.length - 1; i >= 0; i--) {
+      const id = this.exitPlanCalls[i]!
+      if (this.rejectedIds.has(id)) continue
+      const tr = this.results.get(id)
+      if (!tr) return { kind: 'pending' }
+      if (tr.is_error === true) {
+        const teleportPlan = extractTeleportPlan(tr.content)
+        return teleportPlan !== null
+          ? { kind: 'teleport', plan: teleportPlan }
+          : { kind: 'rejected', id }
+      }
+      return { kind: 'approved', plan: extractApprovedPlan(tr.content) }
+    }
+    return { kind: 'unchanged' }
+  }
+}`,
+        description: "ExitPlanModeScanner 是纯函数状态机：ingest() 接收事件流，返回当前审批状态。无 I/O，可离线测试。优先级链：approved > terminated > rejected > pending > unchanged。",
+      },
+      {
+        title: "UltraPlan: pollForApprovedExitPlanMode 轮询",
+        language: "typescript",
+        code: `// utils/ultraplan/ccrSession.ts — Polling loop
+
+const POLL_INTERVAL_MS = 3000   // 3s between polls
+const MAX_CONSECUTIVE_FAILURES = 5  // tolerate transient 5xx
+
+export async function pollForApprovedExitPlanMode(
+  sessionId: string,
+  timeoutMs: number,         // 30 minutes
+  onPhaseChange?: (phase: UltraplanPhase) => void,
+  shouldStop?: () => boolean,
+): Promise<PollResult> {
+  const deadline = Date.now() + timeoutMs
+  const scanner = new ExitPlanModeScanner()
+  let cursor: string | null = null
+  let failures = 0
+
+  while (Date.now() < deadline) {
+    if (shouldStop?.()) throw new UltraplanPollError('stopped', ...)
+
+    let newEvents: SDKMessage[]
+    try {
+      const resp = await pollRemoteSessionEvents(sessionId, cursor)
+      newEvents = resp.newEvents
+      cursor = resp.lastEventId
+      failures = 0   // reset on success
+    } catch (e) {
+      if (!isTransientNetworkError(e) || ++failures >= MAX_CONSECUTIVE_FAILURES)
+        throw new UltraplanPollError(e.message, 'network_or_unknown', ...)
+      await sleep(POLL_INTERVAL_MS)
+      continue
+    }
+
+    const result = scanner.ingest(newEvents)
+
+    if (result.kind === 'approved') return {
+      plan: result.plan, rejectCount: scanner.rejectCount,
+      executionTarget: 'remote'   // user approved in-CCR execution
+    }
+    if (result.kind === 'teleport') return {
+      plan: result.plan, rejectCount: scanner.rejectCount,
+      executionTarget: 'local'    // user chose "execute here"
+    }
+    if (result.kind === 'terminated')
+      throw new UltraplanPollError('terminated', ...)
+
+    // Phase detection for UI pill:
+    // plan_ready = ExitPlanMode showing in browser
+    // needs_input = remote asked a question, waiting for reply
+    // running = remote is actively working
+    const phase = scanner.hasPendingPlan ? 'plan_ready'
+      : quietIdle ? 'needs_input' : 'running'
+    if (phase !== lastPhase) onPhaseChange?.(phase)
+
+    await sleep(POLL_INTERVAL_MS)
+  }
+  throw new UltraplanPollError('timeout', ...)
+}`,
+        codeZh: `// utils/ultraplan/ccrSession.ts — 轮询循环
+
+const POLL_INTERVAL_MS = 3000   // 每 3 秒轮询一次
+const MAX_CONSECUTIVE_FAILURES = 5  // 容忍 5 次连续失败
+
+export async function pollForApprovedExitPlanMode(
+  sessionId: string,
+  timeoutMs: number,         // 30 分钟超时
+  onPhaseChange?: (phase: UltraplanPhase) => void,
+  shouldStop?: () => boolean,
+): Promise<PollResult> {
+  const deadline = Date.now() + timeoutMs
+  const scanner = new ExitPlanModeScanner()
+  let cursor: string | null = null
+  let failures = 0
+
+  while (Date.now() < deadline) {
+    if (shouldStop?.()) throw new UltraplanPollError('已停止', ...)
+
+    let newEvents: SDKMessage[]
+    try {
+      const resp = await pollRemoteSessionEvents(sessionId, cursor)
+      newEvents = resp.newEvents
+      cursor = resp.lastEventId
+      failures = 0   // 成功后重置计数
+    } catch (e) {
+      if (!isTransientNetworkError(e) || ++failures >= MAX_CONSECUTIVE_FAILURES)
+        throw new UltraplanPollError(e.message, 'network_or_unknown', ...)
+      await sleep(POLL_INTERVAL_MS)
+      continue
+    }
+
+    const result = scanner.ingest(newEvents)
+
+    if (result.kind === 'approved') return {
+      plan: result.plan, rejectCount: scanner.rejectCount,
+      executionTarget: 'remote'   // 用户批准在 CCR 中执行
+    }
+    if (result.kind === 'teleport') return {
+      plan: result.plan, rejectCount: scanner.rejectCount,
+      executionTarget: 'local'    // 用户选择"本地执行"
+    }
+    if (result.kind === 'terminated')
+      throw new UltraplanPollError('已终止', ...)
+
+    // Phase 检测用于 UI 药丸指示器：
+    // plan_ready = 浏览器中正在展示 ExitPlanMode
+    // needs_input = 远程提问了，等待用户回复
+    // running = 远程正在工作
+    const phase = scanner.hasPendingPlan ? 'plan_ready'
+      : quietIdle ? 'needs_input' : 'running'
+    if (phase !== lastPhase) onPhaseChange?.(phase)
+
+    await sleep(POLL_INTERVAL_MS)
+  }
+  throw new UltraplanPollError('超时', ...)
+}`,
+        description: "pollForApprovedExitPlanMode 每 3 秒轮询远程事件流，容忍 5 次连续网络故障。Phase 检测驱动 UI 状态（running/needs_input/plan_ready）。",
+      },
+      {
+        title: "UltraPlan: 智能关键词检测",
+        language: "typescript",
+        code: `// utils/ultraplan/keyword.ts — Smart keyword detection
+// Skips occurrences inside paired delimiters to avoid false triggers
+
+const OPEN_TO_CLOSE: Record<string, string> = {
+  \`'\`: \`'\`, \`"\`: \`"\`, \`<\`: \`>\`,
+  \`{\`: \`}\`, \`[\`: \`]\`, \`(\`: \`)\`, \\\`\\\`: \\\`\\\`,
+}
+
+function findKeywordTriggerPositions(
+  text: string, keyword: string
+): TriggerPosition[] {
+  if (text.startsWith('/')) return []  // slash commands excluded
+
+  // Phase 1: Build quoted ranges (skip content inside delimiters)
+  const quotedRanges: Array<{ start: number; end: number }> = []
+  // ... scan for paired delimiters (backticks, quotes, braces, etc.)
+
+  // Phase 2: Find keyword positions, filter out false positives
+  const positions: TriggerPosition[] = []
+  const wordRe = new RegExp(\`\\\\b\${keyword}\\\\b\`, 'gi')
+  for (const match of text.matchAll(wordRe)) {
+    const start = match.index
+    const end = start + match[0].length
+
+    // Skip if inside a quoted range
+    if (quotedRanges.some(r => start >= r.start && start < r.end))
+      continue
+
+    const before = text[start - 1]
+    const after = text[end]
+
+    // Skip path/identifier context: src/ultraplan/foo.ts
+    if (before === '/' || before === '\\\\' || before === '-') continue
+    if (after === '/' || after === '\\\\' || after === '-') continue
+
+    // Skip file extensions: ultraplan.tsx
+    if (after === '.' && isWord(text[end + 1])) continue
+
+    // Skip questions: "what is ultraplan?"
+    if (after === '?') continue
+
+    positions.push({ word: match[0], start, end })
+  }
+  return positions
+}
+
+// Replace first trigger "ultraplan" → "plan" (preserves grammar)
+export function replaceUltraplanKeyword(text: string): string {
+  const [trigger] = findKeywordTriggerPositions(text, 'ultraplan')
+  if (!trigger) return text
+  const before = text.slice(0, trigger.start)
+  const after = text.slice(trigger.end)
+  return before + trigger.word.slice('ultra'.length) + after
+}`,
+        codeZh: `// utils/ultraplan/keyword.ts — 智能关键词检测
+// 跳过配对符号内的出现，避免误触发
+
+const OPEN_TO_CLOSE: Record<string, string> = {
+  \`'\`: \`'\`, \`"\`: \`"\`, \`<\`: \`>\`,
+  \`{\`: \`}\`, \`[\`: \`]\`, \`(\`: \`)\`, \\\`\\\`: \\\`\\\`,
+}
+
+function findKeywordTriggerPositions(
+  text: string, keyword: string
+): TriggerPosition[] {
+  if (text.startsWith('/')) return []  // 排除 slash 命令
+
+  // 阶段 1：构建引号范围（跳过分隔符内的内容）
+  const quotedRanges: Array<{ start: number; end: number }> = []
+  // ... 扫描配对分隔符（反引号、引号、花括号等）
+
+  // 阶段 2：查找关键词位置，过滤误报
+  const positions: TriggerPosition[] = []
+  const wordRe = new RegExp(\`\\\\b\${keyword}\\\\b\`, 'gi')
+  for (const match of text.matchAll(wordRe)) {
+    const start = match.index
+    const end = start + match[0].length
+
+    // 在引号范围内则跳过
+    if (quotedRanges.some(r => start >= r.start && start < r.end))
+      continue
+
+    const before = text[start - 1]
+    const after = text[end]
+
+    // 跳过路径/标识符上下文：src/ultraplan/foo.ts
+    if (before === '/' || before === '\\\\' || before === '-') continue
+    if (after === '/' || after === '\\\\' || after === '-') continue
+
+    // 跳过文件扩展名：ultraplan.tsx
+    if (after === '.' && isWord(text[end + 1])) continue
+
+    // 跳过疑问句：ultraplan 是什么？
+    if (after === '?') continue
+
+    positions.push({ word: match[0], start, end })
+  }
+  return positions
+}
+
+// 替换第一个触发的 "ultraplan" → "plan"（保持语法正确）
+export function replaceUltraplanKeyword(text: string): string {
+  const [trigger] = findKeywordTriggerPositions(text, 'ultraplan')
+  if (!trigger) return text
+  const before = text.slice(0, trigger.start)
+  const after = text.slice(trigger.end)
+  return before + trigger.word.slice('ultra'.length) + after
+}`,
+        description: "关键词检测使用两阶段过滤：先构建配对符号范围（引号/代码块/花括号等），再排除路径上下文和疑问句。replaceUltraplanKeyword 将 'ultraplan' 替换为 'plan' 保持语法。",
+      },
     ],
     flowSteps: [
       { id: "feature", label: "特色功能", description: "独立的子系统" },
       { id: "buddy", label: "Buddy", description: "宠物陪伴用户" },
       { id: "vim", label: "Vim 模式", description: "高效键盘操作" },
       { id: "voice", label: "语音交互", description: "语音输入命令" },
+      { id: "u-input", label: "用户输入", description: "/ultraplan 或关键词触发" },
+      { id: "u-elig", label: "资格检查", description: "登录状态 + Feature Flag" },
+      { id: "u-teleport", label: "Git 打包 + Teleport", description: "三层回退 + 远程会话创建" },
+      { id: "u-ccr", label: "CCR 远程规划", description: "Opus + plan 权限 + 多代理" },
+      { id: "u-poll", label: "Phase 轮询", description: "3s 间隔扫描事件流" },
+      { id: "u-approve", label: "用户审批", description: "浏览器中编辑/批准计划" },
+      { id: "u-exec", label: "执行选择", description: "远程执行 or Teleport 回本地" },
     ],
     flowConnections: [
       { from: "feature", to: "buddy" },
       { from: "feature", to: "vim" },
       { from: "feature", to: "voice" },
+      { from: "feature", to: "u-input" },
+      { from: "u-input", to: "u-elig" },
+      { from: "u-elig", to: "u-teleport" },
+      { from: "u-teleport", to: "u-ccr" },
+      { from: "u-ccr", to: "u-poll" },
+      { from: "u-poll", to: "u-approve" },
+      { from: "u-approve", to: "u-exec" },
     ],
     details: [
       "Buddy 宠物系统是 Claude Code 的彩蛋之一。18 种物种、4 种稀有度（70% 普通、29% 稀有、1% 传奇、0.01% 闪光传奇），每次使用 Claude Code 都会给宠物累积经验值。",
@@ -1839,6 +2420,14 @@ function onUserInteraction(buddy: Buddy) {
       "Cron 调度器还引入了随机 jitter（抖动）：不是所有用户都在整点执行任务，而是在时间窗口内随机偏移几分钟。这避免了全球数百万用户同时向 API 发送请求的'惊群效应'。",
       "物种名称在构建产物中使用字符编码隐藏——防止竞争对手通过 grep 扫描构建产物发现内部代号和敏感功能名称。配合 Bun 编译时 Feature Flags 的死代码消除，构建产物中找不到任何未启用功能的痕迹。",
       "UltraPlan 是一个高级规划 UI，让用户以交互式方式与 Claude 共同设计实现方案——比简单的文本对话更结构化。",
+      "【UltraPlan 深度解析】三入口架构：三个独立的触发路径共享同一个 launchUltraplan 函数。(1) /ultraplan slash 命令——用户显式调用，支持 <prompt> 参数。(2) 关键词触发——用户在普通 prompt 中输入 'ultraplan'，被 keyword.ts 的两阶段扫描检测到。(3) ExitPlanModePermissionRequest 对话框中的 Ultraplan 按钮——用户在本地计划审批时可以一键升级到远程深度规划。三路径共享防重复启动的竞态保护（ultraplanLaunching + ultraplanSessionUrl 双重锁）。",
+      "【UltraPlan 深度解析】CCR 权限隔离：teleportToRemote 创建远程会话时传入 permissionMode: 'plan'——远程 CCR 容器中的 Claude 以 plan 模式运行，只能规划不能执行任何工具。这确保远程多代理探索只产出计划文本，不会意外修改代码。模型使用 Opus（通过 GrowthBook Feature Flag 动态配置），比默认的 Sonnet 更强。",
+      "【UltraPlan 深度解析】ExitPlanModeScanner 优先级链：Scanner.ingest() 对每个事件批次建立优先级链——approved（找到 ExitPlanMode tool_result 且 is_error=false）> terminated（远程会话因错误/超时/最大轮次结束）> rejected（用户点击拒绝，is_error=true 但无 TELEPORT_SENTINEL）> pending（ExitPlanMode tool_use 存在但无 tool_result）> unchanged。一个批次可能同时包含 approved + terminated（用户批准后远程崩溃），approved 优先。",
+      "【UltraPlan 深度解析】Teleport 传送机制：teleportToRemote 调用 createAndUploadGitBundle 进行三层回退打包——首选 git bundle --all（完整历史），失败则 bundle HEAD（仅最新提交），再失败则 squashed-root（压缩到根提交）。这确保无论本地 Git 状态如何，远程都能获得有效的仓库快照。会话创建使用 Haiku 模型自动生成标题和分支名。",
+      "【UltraPlan 深度解析】关键词检测的智能排除：keyword.ts 实现了两阶段扫描——第一阶段构建 'quoted ranges'（配对符号内的区域），支持 9 种配对：反引号、双引号、尖括号（仅标签式）、花括号、方括号、圆括号、单引号（排除撇号）。第二阶段对每个 \\\\bultraplan\\\\b 匹配应用 5 个排除规则：前面有 /、\\\\、-（路径），后面有 /、\\\\、-、?（路径/疑问），后面是 . + word（文件扩展名）。slash 命令输入（以 / 开头）直接跳过。",
+      "【UltraPlan 深度解析】竞态防护设计：从 launchUltraplan 到 startDetachedPoll 的完整链路使用三重锁。(1) ultraplanLaunching——在 teleportToRemote 开始前同步设置，防止多秒创建期间的重复启动。(2) ultraplanSessionUrl——会话创建成功后设置，轮询期间防止新启动。(3) task.status——stopUltraplan 设置为 killed，轮询的 shouldStop 回调在下一个 tick 检测到并优雅退出。所有锁在 finally 块中清理，确保异常路径不会死锁。",
+      "【UltraPlan 深度解析】错误恢复与孤儿防护：launchDetached 在 catch 块中检查 sessionId——如果 teleportToRemote 成功但后续步骤失败，自动调用 archiveRemoteSession 归档远程会话。没有这个防护，远程容器会空转 30 分钟（直到 CCR 超时），浪费计算资源。stopUltraplan 也先 kill 再归档，轮询的 catch 块检查 task.status 跳过已停止的会话。",
+      "【UltraPlan 深度解析】双执行模式：用户审批后有两条路径。(1) executionTarget: 'remote'——用户在浏览器 PlanModal 中选择 'Execute in CCR'，远程会话直接从 plan 模式切换到正常执行模式开始编码，结果最终以 PR 形式提交。(2) executionTarget: 'local'（Teleport）——用户选择 'Execute here'，浏览器发送带有 ULTRAPLAN_TELEPORT_SENTINEL 标记的拒绝反馈（让远程保持 plan 模式），计划文本随标记一起传回本地 CLI，用户在终端中执行。",
     ],
     insights: [
       {
@@ -1889,6 +2478,68 @@ try {
         title: "物种名用字符编码隐藏",
         analogy: "就像间谍用密码本通信——即使信件被截获，看到的也只是一串数字而非明文",
         explanation: "构建产物中的物种名称（如 Buddy 系统的物种）使用字符编码替代明文。这样竞争对手即使拿到了编译后的 JavaScript 文件，用 grep 搜索也找不到这些内部代号。配合 Bun 的编译时 Feature Flags 和死代码消除，未启用的功能在构建产物中完全不存在——不是被注释掉，是物理上被删除了。",
+      },
+      {
+        title: "ExitPlanModeScanner 是纯函数状态机",
+        analogy: "就像法庭书记员——只负责记录和分类证据（事件），不做任何调查（I/O），但能根据证据链给出判决（ScanResult）",
+        explanation: "ExitPlanModeScanner 是 UltraPlan 的核心分类器。它的 ingest() 方法接收 SDKMessage[] 事件批次，返回当前的审批状态（approved/teleport/rejected/pending/terminated/unchanged）。它没有任何 I/O 操作——没有网络请求、没有定时器、没有文件读写。这意味着你可以用录制的事件流进行离线回放测试，也可以构造合成事件验证边界情况（比如同一批次中 approved 和 terminated 并存）。分离 I/O 和状态逻辑是 UltraPlan 最优雅的设计决策之一。",
+        code: `// 纯函数状态机——无 I/O，可离线测试
+class ExitPlanModeScanner {
+  ingest(newEvents: SDKMessage[]): ScanResult {
+    // 只做分类，不做网络请求
+    for (const m of newEvents) {
+      if (m.type === 'assistant')
+        // 追踪 ExitPlanMode 调用
+      else if (m.type === 'user')
+        // 追踪 tool_result（批准/拒绝）
+      else if (m.type === 'result' && m.subtype !== 'success')
+        // 追踪终止事件
+    }
+    // 优先级链：approved > terminated > rejected > pending
+    return classify(this.exitPlanCalls, this.results)
+  }
+}`,
+      },
+      {
+        title: "关键词检测的边界情况处理",
+        analogy: "就像精密的 burglar alarm——能区分真正的入侵者和路过的猫，不会因为一只猫就拉响警报",
+        explanation: "keyword.ts 需要在用户自然语言中检测 'ultraplan' 触发词，同时避免大量误触发。它实现了两阶段过滤：第一阶段构建配对符号范围表（9 种配对：反引号、双引号、尖括号、花括号、方括号、圆括号、单引号），排除引号/代码块内的出现；第二阶段对每个匹配应用 5 种上下文排除——路径上下文（src/ultraplan/）、文件扩展名（ultraplan.tsx）、标识符连字符（--ultraplan-mode）、疑问句（what is ultraplan?）、slash 命令（/rename ultraplan）。最巧妙的是 replaceUltraplanKeyword：将 'ultraplan' 替换为 'plan'，保持 'please ultraplan this' → 'please plan this' 的语法正确性。",
+        code: `// 两阶段过滤——9 种配对 + 5 种上下文排除
+function findKeywordTriggerPositions(text, keyword) {
+  // 阶段 1：构建配对范围
+  const quotedRanges = buildQuotedRanges(text)  // \`...\`, "...", {...}
+
+  // 阶段 2：匹配 + 排除
+  for (const match of text.matchAll(/\\bultraplan\\b/gi)) {
+    if (insideQuotedRange(match, quotedRanges)) continue  // 代码块内
+    if (isPathContext(text, match)) continue     // src/ultraplan/
+    if (isFileExtension(text, match)) continue   // ultraplan.tsx
+    if (isQuestion(text, match)) continue        // ...ultraplan?
+    positions.push(match)
+  }
+}`,
+      },
+      {
+        title: "UltraPlan 的竞态安全设计",
+        analogy: "就像银行转账——先冻结金额（设锁），再执行转账（异步流程），最后解冻（finally 清理）。即使转账中途断电，金额也不会凭空出现或消失",
+        explanation: "从用户按下 /ultraplan 到远程会话完成，竞态风险无处不在。双击按钮可能在 1 秒内触发两次 launchUltraplan；teleportToRemote 需要 5-10 秒，期间用户可能再次输入。三重锁设计解决这个问题：(1) ultraplanLaunching 在 teleportToRemote 之前同步设置，防止创建期间的重复启动；(2) ultraplanSessionUrl 在会话创建成功后设置，轮询期间阻止新启动；(3) task.status 允许 stopUltraplan 优雅中断——轮询的 shouldStop 回调检测到 killed 状态后抛出，catch 块检查 status !== 'running' 后静默退出。所有锁在 finally 块中清理，保证任何异常路径都不会死锁。",
+        code: `// 三重锁设计
+// Lock 1: 创建前同步设置
+setAppState(prev => prev.ultraplanLaunching ? prev : {
+  ...prev, ultraplanLaunching: true  // 防止重复启动
+})
+
+// Lock 2: 会话创建后设置
+setAppState(prev => ({
+  ...prev, ultraplanSessionUrl: url,   // 轮询期间阻止新启动
+  ultraplanLaunching: undefined,       // 清除 Lock 1
+}))
+
+// Lock 3: 停止时 kill + 清理
+await RemoteAgentTask.kill(taskId)     // shouldStop 返回 true
+setAppState(prev => ({
+  ...prev, ultraplanSessionUrl: undefined,  // 解除 Lock 2
+}))`,
       },
     ],
   },
