@@ -42,6 +42,18 @@ const CodeBlock = dynamic(() => import("@/components/CodeBlock"), {
   ),
 });
 
+const BilingualCodeBlock = dynamic(() => import("@/components/BilingualCodeBlock"), {
+  ssr: false,
+  loading: () => (
+    <div
+      className="rounded-xl h-40 flex items-center justify-center"
+      style={{ background: "var(--card-bg)", border: "1px solid var(--card-border)" }}
+    >
+      <span style={{ color: "var(--muted)" }} className="text-sm">加载代码...</span>
+    </div>
+  ),
+});
+
 // Prompt chapter: TOC labels in exact codeSnippets order (index = prompt-cat-N)
 const PROMPT_TOC_LABELS = [
   "索引总览",           // 0  总目录 & 索引
@@ -280,6 +292,19 @@ export default function ChapterContent() {
           <div className="space-y-4">
             {chapter.codeSnippets.map((s, i) => {
               const anchorId = chapter.slug === "prompts" ? `prompt-cat-${i}` : undefined;
+              if (s.codeZh) {
+                return (
+                  <div key={i} id={anchorId}>
+                    <BilingualCodeBlock
+                      title={s.title}
+                      language={s.language}
+                      code={s.code}
+                      codeZh={s.codeZh}
+                      description={s.description}
+                    />
+                  </div>
+                );
+              }
               return (
                 <div key={i} id={anchorId}>
                   <CodeBlock
