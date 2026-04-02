@@ -36,11 +36,11 @@ function CodePanel({
   return (
     <div className="flex-1 min-w-0">
       <div
-        className="flex items-center justify-between px-3 py-2"
+        className="flex items-center justify-between px-4 py-2.5"
         style={{ borderBottom: "1px solid var(--card-border)" }}
       >
         <span
-          className="text-xs font-medium px-2 py-0.5 rounded"
+          className="text-xs font-medium px-2.5 py-1 rounded"
           style={{
             background: label === "EN" ? "var(--accent)" : "var(--accent-secondary, #EDA100)",
             color: "#fff",
@@ -61,9 +61,9 @@ function CodePanel({
           style={oneDark}
           customStyle={{
             margin: 0,
-            padding: "0.75rem",
-            fontSize: "0.75rem",
-            lineHeight: "1.6",
+            padding: "1rem",
+            fontSize: "0.813rem",
+            lineHeight: "1.7",
             background: "#1e1e2e",
           }}
         >

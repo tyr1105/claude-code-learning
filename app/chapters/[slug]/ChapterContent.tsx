@@ -154,7 +154,7 @@ export default function ChapterContent() {
   const Icon = iconMap[chapter.icon] || Layout;
 
   return (
-    <div className="max-w-4xl mx-auto px-6 py-8">
+    <div className="max-w-7xl mx-auto px-6 py-8">
       <TableOfContents items={tocItems} />
 
       {/* Breadcrumb */}
